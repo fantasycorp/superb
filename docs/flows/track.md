@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 | `route(session, track, Option<bus>)` | into a bus, or `None` for the master | one |
 | `mute` / `solo(session, track, on)` | heard at once | state |
 | `arm(session, track, on)` | gets a clip when a recording stops | state |
-| `monitor(session, track, on)` | MIDI track: a live instrument; audio track: the audio input | state |
+| `monitor(session, track, on)` | MIDI track: a synth so incoming notes become audio; audio track: the audio input | state |
 | `input(session, track, Option<Input>)` | `Input::Mono(ch)`, `Input::Stereo(l, r)`, or `None` for everything captured | state |
 | `midi_channel(session, track, Option<0..=15>)` | which channel the track listens to; `None` for all | state |
 | `peak(session, track) -> Option<[f32; 2]>` | the strip's peak since the last read | |

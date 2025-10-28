@@ -96,7 +96,7 @@ Data crosses the thread boundary in exactly three ways:
      memory says, adds a send per send in the memory, and attaches one source
      node per audible clip: `BufferPlayerNode` for audio held in memory,
      `ScheduledSynthNode` for MIDI notes converted through the tempo map,
-     plus a live instrument for every monitoring MIDI track, a tap on the
+     plus a synth for every monitoring MIDI track, a tap on the
      engine's live input for every monitoring audio track, and the
      metronome's click on the master. It returns
      the `MixerHandles` the control side keeps, keyed by the memory's ids (the
