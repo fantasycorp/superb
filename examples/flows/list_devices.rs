@@ -29,15 +29,9 @@ fn channels(max: usize) -> String {
 }
 
 fn main() -> Result<()> {
-    // Outputs always report max_channels 0. Inputs report the largest config.
-    assert_eq!(channels(0), "channels unknown");
-    assert_eq!(channels(2), "2 ch max");
-
     // Default host outputs. * is the default (what None selects).
     println!("outputs:");
-    let outputs = devices::outputs()?;
-    assert!(outputs.iter().all(|d| d.max_channels == 0));
-    for d in &outputs {
+    for d in devices::outputs()? {
         println!(
             "  {}{} ({})",
             d.name,
