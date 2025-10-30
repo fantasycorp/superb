@@ -1,14 +1,16 @@
-//! MIDI: hearing what you play, sending notes, connecting a keyboard.
+//! MIDI: play notes, send messages, connect a keyboard.
 //!
-//! A MIDI track that is *monitoring* gets a live instrument when the
-//! mixer is built, so notes arriving at the engine sound on that track's
-//! strip. Notes can come from your program ([`play_note`], [`send`]) or,
-//! with the `midi-io` feature, from a hardware port (`connect_input`;
-//! `devices::midi_inputs` lists them).
+//! A MIDI track stores notes. They are not a waveform. With monitor on,
+//! [`session::steps::build_mixer`](crate::session::steps::build_mixer) puts
+//! a synth on that track's strip so notes arriving now (`play_note`,
+//! [`send`], or a connected port) become audio. It is still a MIDI track.
+//! Notes can come from your program or, with the `midi-io` feature, from a
+//! hardware port (`connect_input`; `devices::midi_inputs` lists them).
 //!
 //! Made of `superb::primitives::midi` (messages), the engine's MIDI queue
-//! in `superb::primitives::io` (`Engine::live`), and the live instrument
-//! [`session::steps::build_mixer`](crate::session::steps::build_mixer) adds.
+//! in `superb::primitives::io` (`Engine::live`), and the synth
+//! [`session::steps::build_mixer`](crate::session::steps::build_mixer) adds
+//! on a monitoring MIDI track.
 //!
 //! ```
 //! use superb::primitives::session::TrackKind;
@@ -113,8 +115,7 @@ mod tests {
         release_note(&mut session, 0, 69).unwrap();
         let released = session::steps::render_blocks(&mut session, 4).unwrap();
         assert!(released.channel(0)[128..].iter().all(|&s| s == 0.0));
-        // Turning monitoring off removes the instrument at the next rebuild.
-        // It is a switch: nothing lands in the undo history.
+        // Monitor off: the synth is gone at the next rebuild. State, not an edit.
         let steps = session.history.undo_len();
         track::monitor(&mut session, keys, false).unwrap();
         assert_eq!(session.history.undo_len(), steps);
@@ -142,5 +143,26 @@ mod tests {
             "note out of range"
         );
         send(&mut session, MidiMessage::TimingClock).unwrap();
+    }
+
+    #[test]
+    fn the_synth_holds_one_note_and_note_off_must_name_it() {
+        let mut session = session::create(session::scratch("keys"), R, 64).unwrap();
+        let keys = track::add(&mut session, "keys", TrackKind::Midi).unwrap();
+        track::monitor(&mut session, keys, true).unwrap();
+        transport::start(&mut session).unwrap();
+        play_note(&mut session, 0, 60, 100).unwrap();
+        session::steps::render_blocks(&mut session, 2).unwrap();
+        play_note(&mut session, 0, 64, 90).unwrap();
+        play_note(&mut session, 0, 67, 90).unwrap();
+        let sounding = session::steps::render_blocks(&mut session, 4).unwrap();
+        assert!(sounding.peak() > 0.4, "peak {}", sounding.peak());
+        // 60 is not sounding; its note-off does not silence 67.
+        release_note(&mut session, 0, 60).unwrap();
+        let still = session::steps::render_blocks(&mut session, 2).unwrap();
+        assert!(still.peak() > 0.4, "peak {}", still.peak());
+        release_note(&mut session, 0, 67).unwrap();
+        let released = session::steps::render_blocks(&mut session, 4).unwrap();
+        assert!(released.channel(0)[128..].iter().all(|&s| s == 0.0));
     }
 }

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub enum TrackKind {
     /// Audio clips.
     Audio,
-    /// MIDI clips feeding an instrument.
+    /// MIDI clips.
     Midi,
     /// A submix bus; holds no clips.
     Bus,
@@ -284,8 +284,8 @@ pub struct TrackState {
     pub solo: bool,
     /// Armed: an audio track that receives a clip when a recording stops.
     pub arm: bool,
-    /// Monitoring: a MIDI track that carries a live instrument for
-    /// incoming MIDI.
+    /// Monitoring: hear the track's input on its strip. MIDI: a synth so
+    /// incoming notes become audio. Audio: the audio input.
     pub monitor: bool,
     /// Which channel(s) of the audio input feed this track when it records.
     /// `None` takes everything the recording captures.
