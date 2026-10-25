@@ -1,17 +1,8 @@
-//! `session::steps`: build the mixer by hand and render it offline.
+//! `session::steps`: one memory, the mixer it builds, one second of audio.
 //!
-//! Every verb is made of public steps. This example skips the verbs and the
-//! `Session`: it takes a `Memory`, builds the mixer with
-//! `session::steps::build_mixer`, and runs it through an offline `Engine`.
-//! `export` does the same thing to bounce a file.
-//!
-//! What you'll learn:
-//! - The memory and the mixer are separate: `build_mixer` makes a strip
-//!   per track, a node per clip, and hands back the live controls
-//!   (`MixerHandles`) keyed by the memory's ids
-//! - `AudioCache` holds the audio clips refer to
-//! - Bus routing and a pre-fader send come from the memory
-//! - A prepared mixer runs through `Engine` + `offline::render`
+//! The comments are the example. Each one is the block under it: what that
+//! code puts in the memory, what `build_mixer` makes of it, and what the
+//! offline render then contains.
 //!
 //! ```text
 //! cargo run --example session_steps
@@ -19,10 +10,12 @@
 
 use std::path::PathBuf;
 
+use superb::primitives::buffers::gain::db_to_linear;
 use superb::primitives::buffers::PlanarBuffer;
 use superb::primitives::io::cache::AudioCache;
 use superb::primitives::io::wav::{self, WavFormat};
 use superb::primitives::io::{offline, Engine};
+use superb::primitives::mixer::PanLaw;
 use superb::primitives::session::{Clip, ClipSource, Memory, MidiNote, TrackKind, TrackSend};
 use superb::primitives::transport::Transport;
 use superb::primitives::{Result, SampleRate, TimeDuration, TimePosition};
@@ -30,20 +23,24 @@ use superb::session;
 
 fn main() -> Result<()> {
     let rate = SampleRate::HZ_48K;
-    // The memory: tracks, clips, tempo, routing.
+    // A memory named "session-steps" at 48 kHz, tempo 120. It already holds
+    // a master bus. The three tracks below are all `track_count` will report.
     let mut memory = Memory::new("session-steps", rate);
 
-    // An audio track with half a second of a soft tone held in memory.
+    // vox, an audio track at unity. Half a second of DC at 0.2, held in the
+    // cache under the same key the clip names ("tone.wav"). The clip starts
+    // at sample 12_000 (0.25 s) and runs for the whole buffer, 24_000
+    // samples, so it occupies 12_000..36_000.
     let vox = memory.add_track("vox", TrackKind::Audio);
     let mut tone = PlanarBuffer::new(2, 24_000);
     tone.fill(0.2);
     let mut cache = AudioCache::new();
-    cache.insert("tone.wav", tone); // the name the clip refers to
+    cache.insert("tone.wav", tone);
     memory.add_clip(
         vox,
         Clip::new(
             "take",
-            TimePosition::from_samples(12_000), // 0.25 s of silence first
+            TimePosition::from_samples(12_000),
             TimeDuration::from_samples(24_000),
             ClipSource::Audio {
                 path: PathBuf::from("tone.wav"),
@@ -52,7 +49,9 @@ fn main() -> Result<()> {
         )?,
     )?;
 
-    // A MIDI track with one A4 half-beat note; its fader at -3 dB.
+    // keys, a MIDI track at -3 dB. One A4 (note 69, velocity 100) at beat 0
+    // for half a beat. At 120 bpm that is 0.25 s, samples 0..12_000.
+    // The clip is a full second; the note ends at its own length.
     let keys = memory.add_track("keys", TrackKind::Midi);
     memory.track_mut(keys)?.state.volume_db = -3.0;
     memory.add_clip(
@@ -73,17 +72,24 @@ fn main() -> Result<()> {
         )?,
     )?;
 
-    // Routing lives in the memory: keys → room bus (-6 dB) → master, and a
-    // quiet pre-fader send from vox into the same bus.
+    // room, a bus at -6 dB. keys feeds it. vox also sends into it at -12 dB,
+    // pre-fader, so the send is the raw clip: it skips the vox fader and
+    // the vox pan law, and the room bus hears it.
     let room = memory.add_track("room", TrackKind::Bus);
     memory.track_mut(room)?.state.volume_db = -6.0;
     memory.set_track_output(keys, Some(room))?;
     let send = memory.add_send(vox, TrackSend::new(room).level_db(-12.0).pre_fader())?;
 
-    // Step one: the mixer. The handles say what the mixer got for each
-    // track and send in the memory; the flows use them to move a fader without
-    // a rebuild.
+    // One strip per track, plus the master. Volume, pan, mute and solo are
+    // copied onto the strips; the handles are keyed by these memory ids.
+    // Each strip is an input node and a strip node. On top of those eight
+    // nodes, `build_mixer` adds the click (silent: the metronome starts
+    // off), a player for each clip, and the send. 8 + 1 + 2 + 1 = 12.
     let (mixer, handles) = session::steps::build_mixer(&memory, &cache, 2)?;
+    assert_eq!(memory.track_count(), 3);
+    assert_eq!(handles.strips.len(), 4);
+    assert_eq!(handles.sends.len(), 1);
+    assert_eq!(mixer.graph().node_count(), 8 + 1 + 2 + 1);
     println!(
         "{} tracks became {} strips, {} send(s); the graph has {} nodes",
         memory.track_count(),
@@ -105,21 +111,65 @@ fn main() -> Result<()> {
         handles.send(send).is_some_and(|s| s.is_enabled())
     );
 
-    // Step two: run it. The live engine would `publish` the mixer's graph;
-    // offline we hand it to an `Engine` with a transport on the memory's
-    // tempo map and render a second.
+    // The same tempo map, transport already playing, one second in blocks
+    // of 256. `offline::render` prepares the engine and pulls the blocks.
     let mut transport = Transport::with_tempo_map(memory.tempo_map().clone());
     transport.play();
     let mut engine = Engine::new(mixer, transport);
     let audio = offline::render(&mut engine, rate, 256, 48_000)?;
 
+    // Both channels match: every pan is centred.
+    //
+    // 0..12_000 is the A4. Amplitude is velocity/127, then the keys fader
+    // (−3 dB), the track's constant-power pan (−3 dB at centre), and the
+    // room bus (−6 dB; a bus uses the balance law, unity at centre).
+    let centre = PanLaw::ConstantPower.gains(0.0).0;
+    let note = (100.0 / 127.0) * db_to_linear(-3.0) * centre * db_to_linear(-6.0);
+    let note_peak = audio.channel(0)[..12_000]
+        .iter()
+        .fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(
+        (note_peak - note).abs() < 1e-4,
+        "A4 peak {note_peak} vs {note}"
+    );
+    assert!(
+        (audio.channel(1)[..12_000]
+            .iter()
+            .fold(0.0f32, |m, s| m.max(s.abs()))
+            - note)
+            .abs()
+            < 1e-4
+    );
+
+    // 12_000..36_000 is the tone, on both channels. The direct path is 0.2
+    // through the vox pan law. The send path is 0.2 through −12 dB and the
+    // room bus's −6 dB, with no track pan on it.
+    let tone_level = 0.2 * centre + 0.2 * db_to_linear(-12.0) * db_to_linear(-6.0);
+    for at in [12_000usize, 24_000, 35_999] {
+        assert!(
+            (audio.channel(0)[at] - tone_level).abs() < 1e-4,
+            "tone L frame {at}: {} vs {tone_level}",
+            audio.channel(0)[at]
+        );
+        assert!(
+            (audio.channel(1)[at] - tone_level).abs() < 1e-4,
+            "tone R frame {at}: {} vs {tone_level}",
+            audio.channel(1)[at]
+        );
+    }
+
+    // 36_000..48_000 is past the note and past the clip.
+    assert!(audio.channel(0)[36_000..].iter().all(|&s| s == 0.0));
+    assert!(audio.channel(1)[36_000..].iter().all(|&s| s == 0.0));
+
+    println!(
+        "0.00..0.25 s  A4 peak {note_peak:.3}\n\
+         0.25..0.75 s  tone {tone_level:.3}\n\
+         0.75..1.00 s  silent"
+    );
+
     let path = std::env::temp_dir().join("session_steps.wav");
     wav::write(&path, &audio, rate, WavFormat::Float32)?;
-    println!(
-        "wrote {}: {} frames, peak {:.3}",
-        path.display(),
-        audio.frames(),
-        audio.peak()
-    );
+    println!("wrote {}", path.display());
     Ok(())
 }
