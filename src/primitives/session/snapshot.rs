@@ -240,6 +240,32 @@ pub struct MarkerSnapshot {
 }
 
 /// A whole memory.
+///
+/// ```
+/// use superb::primitives::session::{Memory, FORMAT_VERSION};
+/// use superb::primitives::{BeatPosition, SampleRate};
+///
+/// let mut memory = Memory::new("rich", SampleRate::HZ_48K);
+/// memory.tempo_map_mut().set_initial_tempo(100.0)?;
+/// memory
+///     .tempo_map_mut()
+///     .add_tempo_ramp(BeatPosition::new(8.0), 140.0)?;
+/// memory
+///     .tempo_map_mut()
+///     .add_tempo(BeatPosition::new(16.0), 90.0)?;
+/// let json = memory.to_json()?;
+/// assert_eq!(FORMAT_VERSION, 1);
+/// assert!(json.contains("\"format_version\": 1"));
+/// let back = Memory::from_json(&json)?;
+/// assert_eq!(back.name(), "rich");
+/// assert_eq!(back.snapshot().format_version, FORMAT_VERSION);
+/// assert_eq!(
+///     back.tempo_map().tempo_at(BeatPosition::new(12.0)),
+///     115.0
+/// );
+/// assert!(back.tempo_map().tempo_points()[1].ramp);
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MemorySnapshot {
     /// [`FORMAT_VERSION`] of the writer.

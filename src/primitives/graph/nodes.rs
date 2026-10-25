@@ -676,7 +676,23 @@ impl MonoSynthNode {
         self.note
     }
 
-    /// Equal-tempered frequency of a MIDI note number (A4 = 69 = 440 Hz).
+    /// Equal-tempered frequency, in hertz, of a MIDI note number.
+    ///
+    /// Note numbers run `0..=127`. A4 is 69 and is 440 Hz. Twelve notes is
+    /// one octave, so 81 is 880 Hz. The ends of that range are note 0 at
+    /// 8.1757989156 Hz and note 127 at 12543.8539514 Hz.
+    ///
+    /// ```
+    /// use superb::primitives::graph::nodes::MonoSynthNode;
+    ///
+    /// assert!((MonoSynthNode::note_to_hz(69) - 440.0).abs() < 1e-9);
+    /// assert!((MonoSynthNode::note_to_hz(81) - 880.0).abs() < 1e-6);
+    /// let low = MonoSynthNode::note_to_hz(0);
+    /// let high = MonoSynthNode::note_to_hz(127);
+    /// assert!((low - 8.1757989156).abs() < 1e-6);
+    /// assert!((high - 12543.8539514).abs() < 1e-4);
+    /// assert!(low < MonoSynthNode::note_to_hz(60) && MonoSynthNode::note_to_hz(60) < high);
+    /// ```
     pub fn note_to_hz(note: u8) -> f64 {
         440.0 * 2f64.powf((note as f64 - 69.0) / 12.0)
     }
@@ -1308,6 +1324,9 @@ mod tests {
         );
         assert!((MonoSynthNode::note_to_hz(69) - 440.0).abs() < 1e-9);
         assert!((MonoSynthNode::note_to_hz(81) - 880.0).abs() < 1e-9);
+        // Note numbers 0..=127: about 8.18 Hz through about 12.5 kHz.
+        assert!((MonoSynthNode::note_to_hz(0) - 8.1757989156).abs() < 1e-6);
+        assert!((MonoSynthNode::note_to_hz(127) - 12543.8539514).abs() < 1e-4);
     }
 
     #[test]

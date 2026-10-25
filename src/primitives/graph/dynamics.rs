@@ -9,6 +9,51 @@
 //! Every node here is stereo-linked: one gain for all its channels, from
 //! the loudest of them, so the image never shifts. `prepare` allocates
 //! the lookahead and the detector state; `process` never does.
+//!
+//! ```
+//! use std::sync::Arc;
+//! use superb::primitives::buffers::gain::db_to_linear;
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::graph::dynamics::{Compressor, CompressorParams};
+//! use superb::primitives::graph::{BlockTime, Node, NodeChannels, ProcessContext, ProcessStatus};
+//! use superb::primitives::midi::MidiEventBuffer;
+//! use superb::primitives::SampleRate;
+//!
+//! let params = Arc::new(CompressorParams::new(-20.0, 4.0));
+//! assert_eq!(params.threshold_db(), -20.0);
+//! assert_eq!(params.ratio(), 4.0);
+//! assert_eq!(params.attack_ms(), 10.0);
+//! assert_eq!(params.release_ms(), 100.0);
+//! assert_eq!(params.knee_db(), 6.0);
+//! params.set_knee_db(0.0);
+//! params.set_attack_ms(0.0);
+//! params.set_ratio(0.5);
+//! assert_eq!(params.ratio(), 1.0);
+//! params.set_ratio(4.0);
+//!
+//! let mut comp = Compressor::new(2, Arc::clone(&params));
+//! assert_eq!(comp.name(), "compressor");
+//! assert_eq!(comp.channels(), NodeChannels::symmetric(2));
+//! comp.prepare(SampleRate::HZ_48K, 4);
+//! let midi = MidiEventBuffer::with_capacity(0);
+//! let ctx = ProcessContext {
+//!     sample_rate: SampleRate::HZ_48K,
+//!     frames: 4,
+//!     time: BlockTime::free_running(),
+//!     midi: &midi,
+//!     input_is_silent: false,
+//!     input: None,
+//! };
+//! // -8 dBFS, 12 dB over a hard 4:1 knee: 9 dB off. Attack is instant.
+//! let level = db_to_linear(-8.0);
+//! let mut input = PlanarBuffer::new(2, 4);
+//! input.fill(level);
+//! let mut output = PlanarBuffer::new(2, 4);
+//! assert_eq!(comp.process(&ctx, &input, &mut output), ProcessStatus::Normal);
+//! let expected = level * db_to_linear(-9.0);
+//! assert!((output.channel(0)[0] - expected).abs() < 1e-4);
+//! assert!((params.reduction_db() - 9.0).abs() < 1e-3);
+//! ```
 
 use std::sync::Arc;
 

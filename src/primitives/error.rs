@@ -7,6 +7,23 @@ use core::fmt;
 /// The enum is intentionally small. No variant owns heap data except
 /// [`SuperbError::Message`], which is only ever constructed off the audio
 /// thread.
+///
+/// ```
+/// use superb::primitives::SuperbError;
+///
+/// let mismatch = SuperbError::ChannelMismatch {
+///     expected: 2,
+///     actual: 1,
+/// };
+/// assert_eq!(mismatch.to_string(), "channel mismatch: expected 2, got 1");
+/// let missing = SuperbError::NotFound {
+///     kind: "node",
+///     id: 7,
+/// };
+/// assert_eq!(missing.to_string(), "node with id 7 not found");
+/// let message: SuperbError = "device vanished".into();
+/// assert_eq!(message.to_string(), "device vanished");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SuperbError {

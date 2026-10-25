@@ -134,6 +134,15 @@ unsafe fn descriptor_from(desc: &clap_plugin_descriptor, path: &Path) -> PluginD
 ///
 /// Shared by every instance created from it (`Arc`), so the library stays
 /// mapped and `deinit` runs only after the last plugin is destroyed.
+///
+/// ```
+/// use superb::primitives::plugins::clap::{ClapBundle, EVENT_CAPACITY};
+///
+/// assert_eq!(EVENT_CAPACITY, 1024);
+/// let missing = std::path::Path::new("/tmp/superb-doc-no-such-plugin.clap");
+/// let err = ClapBundle::load(missing).unwrap_err();
+/// assert!(err.to_string().contains("not found"));
+/// ```
 pub struct ClapBundle {
     path: PathBuf,
     entry: *const clap_plugin_entry,

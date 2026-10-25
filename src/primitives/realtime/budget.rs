@@ -6,6 +6,32 @@
 //! reports elapsed time, load ratio and whether the deadline was missed.
 //! [`LoadMeter`] accumulates those reports into lock-free atomics that a UI
 //! thread can read.
+//!
+//! ```
+//! use std::time::Duration;
+//! use superb::primitives::SampleRate;
+//! use superb::primitives::realtime::{LoadMeter, ProcessBudget};
+//!
+//! let block = ProcessBudget::for_block(480, SampleRate::HZ_48K);
+//! assert_eq!(block.duration(), Duration::from_millis(10));
+//! let budget = ProcessBudget::from_duration(Duration::from_millis(10));
+//! let ok = budget.report(Duration::from_millis(5));
+//! assert!(!ok.overran());
+//! assert!((ok.load - 0.5).abs() < 1e-9);
+//! let late = budget.report(Duration::from_millis(15));
+//! assert!(late.overran());
+//! assert!((late.load - 1.5).abs() < 1e-9);
+//!
+//! let meter = LoadMeter::new();
+//! meter.set_smoothing(1.0);
+//! meter.record(&budget.report(Duration::from_millis(2)));
+//! meter.record(&budget.report(Duration::from_millis(12)));
+//! meter.record(&budget.report(Duration::from_millis(4)));
+//! assert!((meter.load() - 0.4).abs() < 1e-6);
+//! assert!((meter.peak() - 1.2).abs() < 1e-6);
+//! assert_eq!(meter.overruns(), 1);
+//! assert_eq!(meter.callbacks(), 3);
+//! ```
 
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};

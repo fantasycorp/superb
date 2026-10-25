@@ -7,6 +7,31 @@
 //! Past 4 GiB a streamed file becomes RF64 (EBU Tech 3306: the same layout
 //! with 64-bit sizes in a `ds64` chunk), which every DAW reads. For other
 //! codecs use `files::decode` (feature `files`), which wraps a full decoder.
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::io::wav::{read_from, write_to, WavFormat};
+//! use superb::primitives::SampleRate;
+//!
+//! let mut audio = PlanarBuffer::new(2, 5);
+//! audio
+//!     .channel_mut(0)
+//!     .copy_from_slice(&[0.0, 0.5, -0.5, 1.0, -1.0]);
+//! audio
+//!     .channel_mut(1)
+//!     .copy_from_slice(&[0.25, -0.25, 0.125, 0.0, 0.75]);
+//! let mut bytes = Vec::new();
+//! write_to(&mut bytes, &audio, SampleRate::CD, WavFormat::Float32)?;
+//! assert_eq!(bytes.len(), 44 + 5 * 2 * 4);
+//! assert_eq!(&bytes[0..4], b"RIFF");
+//! assert_eq!(&bytes[36..40], b"data");
+//! let (read, rate) = read_from(&mut bytes.as_slice())?;
+//! assert_eq!(rate, SampleRate::CD);
+//! assert_eq!(read.channel(0), audio.channel(0));
+//! assert_eq!(read.channel(1), audio.channel(1));
+//! assert_eq!(WavFormat::Pcm16.bits(), 16);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};

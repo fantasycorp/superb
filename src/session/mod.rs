@@ -18,6 +18,46 @@
 //! `superb::primitives::undo` (the history), `superb::primitives::io::wav`
 //! (the files) and the engine side in [`steps`]. Each function below lists
 //! the primitive calls it makes.
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::{SampleRate, TimeDuration, TimePosition};
+//! use superb::{clip, session, track};
+//!
+//! let folder = std::env::temp_dir().join(format!(
+//!     "superb-session-example-{}",
+//!     std::process::id()
+//! ));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! assert!(session.history.is_clean());
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! track::rename(&mut session, vox, "vocals")?;
+//! assert_eq!(session.memory.track(vox).unwrap().name, "vocals");
+//! session
+//!     .audio
+//!     .insert("takes/take 1.wav", PlanarBuffer::new(2, 50));
+//! let id = clip::add(
+//!     &mut session,
+//!     vox,
+//!     "takes/take 1.wav",
+//!     TimePosition::from_samples(100),
+//! )?;
+//! assert_eq!(session.memory.clip(id).unwrap().name, "take 1");
+//! assert_eq!(
+//!     session.memory.clip(id).unwrap().length(),
+//!     TimeDuration::from_samples(50)
+//! );
+//! clip::move_to(&mut session, id, vox, TimePosition::from_samples(200))?;
+//! clip::move_to(&mut session, id, vox, TimePosition::from_samples(300))?;
+//! session.history.seal();
+//! assert!(session::undo(&mut session)?);
+//! assert_eq!(session.memory.clip(id).unwrap().start().samples(), 100);
+//! assert!(session::redo(&mut session)?);
+//! assert_eq!(session.memory.clip(id).unwrap().start().samples(), 300);
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 pub(crate) mod folder;
 pub mod steps;

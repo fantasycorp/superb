@@ -13,6 +13,30 @@
 //!
 //! Made of `superb::primitives::session` (the memory's tracks and their
 //! commands) and `superb::primitives::mixer` (`StripParams`, the live side).
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{session, track, transport};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-track-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! let mut tone = PlanarBuffer::new(2, 4_000);
+//! tone.fill(0.5);
+//! session.audio.insert("tone.wav", tone);
+//! superb::clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! assert!(track::peak(&session, vox).is_none());
+//! transport::start(&mut session)?;
+//! session::steps::render_blocks(&mut session, 4)?;
+//! let [left, right] = track::peak(&session, vox).unwrap();
+//! assert!(left > 0.3 && right > 0.3);
+//! // Reading the meter resets the hold.
+//! assert_eq!(track::peak(&session, vox).unwrap(), [0.0, 0.0]);
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::session::commands::{
     self, AddTrack, ArchiveTrack, MoveTrack, SetTrackOutput,

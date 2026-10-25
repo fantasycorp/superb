@@ -4,6 +4,14 @@
 //! locks) can call [`debug_assert_not_rt`]; the device layer marks its
 //! callback thread with [`enter_rt`]. The checks compile to nothing in
 //! release builds.
+//!
+//! ```
+//! use superb::primitives::realtime::thread::{is_rt_thread, with_rt};
+//!
+//! assert!(!is_rt_thread());
+//! with_rt(|| assert!(is_rt_thread()));
+//! assert!(!is_rt_thread());
+//! ```
 
 use std::cell::Cell;
 

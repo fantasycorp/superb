@@ -25,6 +25,52 @@
 //! `superb::primitives::io::wav::Writer` (the files), the session's audio
 //! input (`devices::input`, feature `devices`), the audio held on the
 //! `Session`, and [`clip::add`](crate::clip::add).
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::io::capture::capture_queue;
+//! use superb::primitives::session::{ClipSource, TrackKind};
+//! use superb::primitives::SampleRate;
+//! use superb::{record, session, track};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-record-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! track::arm(&mut session, vox, true)?;
+//! assert!(session.memory.track(vox).unwrap().state.arm);
+//!
+//! let (mut mic, blocks) = capture_queue(1, 64, 16)?;
+//! record::start(
+//!     &mut session,
+//!     record::Source::Queue {
+//!         blocks,
+//!         channels: 1,
+//!     },
+//! )?;
+//! let mut block = PlanarBuffer::new(1, 64);
+//! block.fill(0.25);
+//! for i in 0..5u64 {
+//!     assert!(mic.push(&block, i));
+//! }
+//! let clips = record::stop(&mut session)?;
+//! let file = folder.join("audio/vox 1.wav");
+//! assert!(file.is_file());
+//! let (read, rate) = superb::primitives::io::wav::read(&file)?;
+//! assert_eq!(rate, SampleRate::HZ_48K);
+//! assert_eq!(read.frames(), 320);
+//! assert_eq!(read.channels(), 1);
+//! assert!(read.channel(0).iter().all(|&s| s == 0.25));
+//! let clip = session.memory.clip(clips[0]).unwrap();
+//! assert_eq!(clip.name, "vox 1");
+//! assert!(matches!(
+//!     &clip.source,
+//!     ClipSource::Audio { path, .. } if path == std::path::Path::new("audio/vox 1.wav")
+//! ));
+//! assert!(session::undo(&mut session)?);
+//! assert!(!file.exists());
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::path::{Path, PathBuf};

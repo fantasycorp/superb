@@ -6,6 +6,16 @@
 //! with [`MidiMessage::from_bytes`] and pushes a [`TimestampedMessage`] into
 //! a [`spsc`] queue that the audio thread drains — the standard
 //! "non-RT producer, RT consumer" pattern used throughout the SDK.
+//!
+//! Listing ports needs the `midi-io` feature. A missing backend is an
+//! error, not a panic:
+//!
+//! ```ignore
+//! match superb::primitives::midi::list_input_ports() {
+//!     Ok(_ports) => {}
+//!     Err(error) => assert!(matches!(error, superb::primitives::SuperbError::Message(_))),
+//! }
+//! ```
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

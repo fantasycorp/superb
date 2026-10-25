@@ -12,6 +12,50 @@ const MAX_RAMP_CHANNELS: usize = 8;
 
 /// Gain → pan → mute/solo → meter, with per-block linear ramps so that
 /// parameter changes never click.
+///
+/// ```
+/// use std::sync::Arc;
+/// use superb::primitives::buffers::PlanarBuffer;
+/// use superb::primitives::graph::{BlockTime, Node, ProcessContext, ProcessStatus};
+/// use superb::primitives::midi::MidiEventBuffer;
+/// use superb::primitives::mixer::{PanLaw, StripNode, StripParams};
+/// use superb::primitives::SampleRate;
+///
+/// let params = Arc::new(StripParams::new(None));
+/// params.set_pan_law(PanLaw::Balance);
+/// let mut strip = StripNode::new(Arc::clone(&params), 2);
+/// let midi = MidiEventBuffer::with_capacity(0);
+/// let ctx = ProcessContext {
+///     sample_rate: SampleRate::HZ_48K,
+///     frames: 4,
+///     time: BlockTime::free_running(),
+///     midi: &midi,
+///     input_is_silent: false,
+///     input: None,
+/// };
+/// let mut input = PlanarBuffer::new(2, 4);
+/// input.fill(1.0);
+/// let mut output = PlanarBuffer::new(2, 4);
+/// assert_eq!(
+///     strip.process(&ctx, &input, &mut output),
+///     ProcessStatus::Normal
+/// );
+/// assert_eq!(output.channel(0), &[1.0; 4]);
+/// assert_eq!(params.peak(0), 1.0);
+/// params.set_mute(true);
+/// assert_eq!(
+///     strip.process(&ctx, &input, &mut output),
+///     ProcessStatus::Normal
+/// );
+/// assert!((output.channel(0)[0] - 1.0).abs() < 1e-6);
+/// assert!((output.channel(0)[1] - 2.0 / 3.0).abs() < 1e-6);
+/// assert!((output.channel(0)[2] - 1.0 / 3.0).abs() < 1e-6);
+/// assert_eq!(output.channel(0)[3], 0.0);
+/// assert_eq!(
+///     strip.process(&ctx, &input, &mut output),
+///     ProcessStatus::Silent
+/// );
+/// ```
 pub struct StripNode {
     params: Arc<StripParams>,
     channels: usize,

@@ -1,4 +1,30 @@
 //! Audio held in memory for the console to play.
+//!
+//! ```
+//! use std::path::Path;
+//! use std::sync::Arc;
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::io::cache::AudioCache;
+//!
+//! let mut cache = AudioCache::new();
+//! assert!(cache.is_empty());
+//! let first = cache.insert("a.wav", PlanarBuffer::new(2, 10));
+//! assert_eq!(cache.len(), 1);
+//! assert!(Arc::ptr_eq(
+//!     &cache.get(Path::new("a.wav")).unwrap(),
+//!     &first
+//! ));
+//! let second = cache.insert("a.wav", PlanarBuffer::new(2, 20));
+//! assert_eq!(cache.len(), 1);
+//! assert_eq!(cache.get(Path::new("a.wav")).unwrap().frames(), 20);
+//! assert!(cache.get(Path::new("missing.wav")).is_none());
+//! cache.insert_shared("b.wav", Arc::clone(&second));
+//! assert_eq!(cache.len(), 2);
+//! assert!(Arc::ptr_eq(
+//!     &cache.get(Path::new("b.wav")).unwrap(),
+//!     &second
+//! ));
+//! ```
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -18,29 +18,6 @@
 //! Nothing here blocks or allocates on the audio side: commands are `Copy`
 //! or move a queue handle, graph swaps are pointer exchanges, and retired
 //! graphs travel back to the control side to be dropped there.
-//!
-//! ```
-//! use superb::primitives::graph::nodes::ConstantNode;
-//! use superb::primitives::graph::AudioGraph;
-//! use superb::primitives::io::{Engine, EngineCommand};
-//! use superb::primitives::buffers::PlanarBuffer;
-//! use superb::primitives::{SampleRate, TimePosition};
-//!
-//! let (mut control, mut audio) = Engine::live(SampleRate::HZ_48K, 64, 120.0).unwrap();
-//!
-//! // Control thread: build a graph and publish it.
-//! let mut graph = AudioGraph::new();
-//! let c = graph.add_node(Box::new(ConstantNode::new(0.5, 2)));
-//! graph.set_output(c).unwrap();
-//! control.publish(graph).unwrap();
-//! control.send(EngineCommand::Play).unwrap();
-//!
-//! // Audio thread: one block.
-//! let mut out = PlanarBuffer::new(2, 64);
-//! audio.tick(&mut out).unwrap();
-//! assert_eq!(out.channel(0)[0], 0.5);
-//! assert_eq!(control.position(), TimePosition::from_samples(64));
-//! ```
 
 use std::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -630,6 +607,26 @@ impl Engine<LiveGraph> {
     /// and `max_frames`, a stopped transport at `bpm`, and the built-in
     /// software MIDI queue attached. Publish a graph with
     /// [`EngineHandle::publish`], then drive [`AudioThread::tick`].
+    ///
+    /// ```
+    /// use superb::primitives::buffers::PlanarBuffer;
+    /// use superb::primitives::graph::nodes::ConstantNode;
+    /// use superb::primitives::graph::AudioGraph;
+    /// use superb::primitives::io::{Engine, EngineCommand};
+    /// use superb::primitives::{SampleRate, TimePosition};
+    ///
+    /// let (mut control, mut audio) = Engine::live(SampleRate::HZ_48K, 64, 120.0)?;
+    /// let mut graph = AudioGraph::new();
+    /// let c = graph.add_node(Box::new(ConstantNode::new(0.5, 2)));
+    /// graph.set_output(c)?;
+    /// control.publish(graph)?;
+    /// control.send(EngineCommand::Play)?;
+    /// let mut out = PlanarBuffer::new(2, 64);
+    /// audio.tick(&mut out)?;
+    /// assert_eq!(out.channel(0)[0], 0.5);
+    /// assert_eq!(control.position(), TimePosition::from_samples(64));
+    /// # Ok::<(), superb::primitives::SuperbError>(())
+    /// ```
     pub fn live(
         sample_rate: SampleRate,
         max_frames: usize,

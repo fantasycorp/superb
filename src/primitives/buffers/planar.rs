@@ -9,6 +9,24 @@ use crate::primitives::buffers::ChannelLayout;
 /// The buffer is allocated once for `capacity` frames; [`PlanarBuffer::set_frames`]
 /// shrinks the *active* frame count without reallocating so a variable-size
 /// device callback can reuse one buffer.
+///
+/// ```
+/// use superb::primitives::buffers::{ChannelLayout, PlanarBuffer};
+///
+/// let mut block = PlanarBuffer::new(2, 4);
+/// assert_eq!(block.channels(), 2);
+/// assert_eq!(block.frames(), 4);
+/// assert!(block.is_silent());
+/// assert_eq!(block.peak(), 0.0);
+/// assert_eq!(block.layout(), ChannelLayout::Stereo);
+/// for channel in 0..2 {
+///     for (index, sample) in block.channel_mut(channel).iter_mut().enumerate() {
+///         *sample = (channel * 10 + index) as f32;
+///     }
+/// }
+/// assert_eq!(block.channel(0), &[0.0, 1.0, 2.0, 3.0]);
+/// assert_eq!(block.channel(1), &[10.0, 11.0, 12.0, 13.0]);
+/// ```
 #[derive(Clone, Debug)]
 pub struct PlanarBuffer {
     data: Vec<f32>,

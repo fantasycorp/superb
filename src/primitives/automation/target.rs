@@ -9,6 +9,17 @@ use crate::primitives::realtime::AtomicF32;
 /// Implemented for [`AtomicF32`] and [`Arc<AtomicF32>`] so lanes can bind
 /// directly to the same handles that mixer strips and graph nodes already
 /// expose.
+///
+/// ```
+/// use std::sync::Arc;
+/// use superb::primitives::automation::ParamTarget;
+/// use superb::primitives::realtime::AtomicF32;
+///
+/// let parameter = Arc::new(AtomicF32::new(0.25));
+/// assert_eq!(ParamTarget::get(&parameter), 0.25);
+/// ParamTarget::set(&parameter, 0.75);
+/// assert_eq!(parameter.get(), 0.75);
+/// ```
 pub trait ParamTarget {
     /// Current value (UI or last automation write).
     fn get(&self) -> f32;

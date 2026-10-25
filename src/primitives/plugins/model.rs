@@ -50,6 +50,27 @@ pub struct PluginDescriptor {
 
 impl PluginDescriptor {
     /// Creates a minimal descriptor (tests, in-process plugins).
+    ///
+    /// ```
+    /// use superb::primitives::plugins::{AudioPortLayout, PluginDescriptor, PluginFormat};
+    ///
+    /// let mut descriptor = PluginDescriptor::new(PluginFormat::Clap, "a.b", "AB");
+    /// assert!(!descriptor.is_instrument());
+    /// assert!(!descriptor.is_audio_effect());
+    /// descriptor.features = vec!["instrument".into(), "synthesizer".into()];
+    /// assert!(descriptor.is_instrument());
+    /// descriptor.features.push("audio-effect".into());
+    /// assert!(descriptor.is_audio_effect());
+    /// assert_eq!(PluginFormat::Clap.extension(), "clap");
+    /// assert_eq!(PluginFormat::Vst3.extension(), "vst3");
+    /// assert_eq!(
+    ///     AudioPortLayout::default(),
+    ///     AudioPortLayout {
+    ///         inputs: 0,
+    ///         outputs: 0
+    ///     }
+    /// );
+    /// ```
     pub fn new(format: PluginFormat, id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             format,

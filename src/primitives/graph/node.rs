@@ -83,6 +83,53 @@ pub trait BlockProcessor: Send {
 
 /// A processor in the audio graph.
 ///
+/// ```
+/// use superb::primitives::buffers::PlanarBuffer;
+/// use superb::primitives::graph::{BlockTime, Node, NodeChannels, ProcessContext, ProcessStatus};
+/// use superb::primitives::midi::MidiEventBuffer;
+/// use superb::primitives::SampleRate;
+///
+/// struct Gain(f32);
+/// impl Node for Gain {
+///     fn channels(&self) -> NodeChannels {
+///         NodeChannels::symmetric(1)
+///     }
+///     fn process(
+///         &mut self,
+///         _ctx: &ProcessContext<'_>,
+///         input: &PlanarBuffer,
+///         output: &mut PlanarBuffer,
+///     ) -> ProcessStatus {
+///         output.copy_from(input).unwrap();
+///         output.apply_gain(self.0);
+///         ProcessStatus::Normal
+///     }
+/// }
+///
+/// let mut node = Gain(0.5);
+/// assert_eq!(node.name(), "node");
+/// assert_eq!(node.channels(), NodeChannels::symmetric(1));
+/// assert_eq!(node.latency_frames(), 0);
+/// node.prepare(SampleRate::HZ_48K, 4);
+/// let midi = MidiEventBuffer::with_capacity(0);
+/// let ctx = ProcessContext {
+///     sample_rate: SampleRate::HZ_48K,
+///     frames: 4,
+///     time: BlockTime::free_running(),
+///     midi: &midi,
+///     input_is_silent: false,
+///     input: None,
+/// };
+/// let mut input = PlanarBuffer::new(1, 4);
+/// input.fill(1.0);
+/// let mut output = PlanarBuffer::new(1, 4);
+/// assert_eq!(
+///     node.process(&ctx, &input, &mut output),
+///     ProcessStatus::Normal
+/// );
+/// assert_eq!(output.channel(0), &[0.5; 4]);
+/// ```
+///
 /// Contract:
 /// * [`prepare`](Node::prepare) is called off the audio thread before the
 ///   first `process` and again if the sample rate or block size changes. It

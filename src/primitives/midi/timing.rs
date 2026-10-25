@@ -7,6 +7,22 @@
 //! two: call [`FrameMapper::set_block`] once per process callback with the
 //! block's start time and length, then [`FrameMapper::frame_for`] for every
 //! pending input message.
+//!
+//! ```
+//! use superb::primitives::SampleRate;
+//! use superb::primitives::midi::timing::{us_to_frames, FrameMapper};
+//!
+//! let rate = SampleRate::new(48_000).unwrap();
+//! assert_eq!(us_to_frames(1_000_000, rate), 48_000);
+//! assert_eq!(us_to_frames(500_000, rate), 24_000);
+//! assert_eq!(us_to_frames(20, rate), 0);
+//! assert_eq!(us_to_frames(21, rate), 1);
+//!
+//! let mut mapper = FrameMapper::new(rate);
+//! mapper.set_block(0, 480);
+//! assert_eq!(mapper.frame_for(5_000), 240);
+//! assert_eq!(mapper.frame_for(21), 1);
+//! ```
 
 use crate::primitives::SampleRate;
 

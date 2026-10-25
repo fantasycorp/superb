@@ -332,6 +332,23 @@ mod tests {
     use crate::primitives::graph::AudioGraph;
     use crate::primitives::transport::Transport;
 
+    /// A zero channel count or a zero block size is rejected before any
+    /// device is opened.
+    #[test]
+    fn example() {
+        let bad = OutputConfig {
+            channels: 0,
+            ..OutputConfig::default()
+        };
+        assert!(OutputStream::open(&bad, |_| {}).is_err());
+        let bad = OutputConfig {
+            max_block_frames: 0,
+            ..OutputConfig::default()
+        };
+        assert!(OutputStream::open(&bad, |_| {}).is_err());
+        assert!(OutputStream::open_timed(&bad, |_, _| {}).is_err());
+    }
+
     #[test]
     fn enumeration_does_not_panic_without_hardware() {
         // May be empty or Err on CI; must not panic.

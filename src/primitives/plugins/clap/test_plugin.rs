@@ -508,3 +508,69 @@ pub static TEST_ENTRY: clap_plugin_entry = clap_plugin_entry {
     deinit: Some(entry_deinit),
     get_factory: Some(entry_get_factory),
 };
+
+#[cfg(test)]
+mod tests {
+    use super::{TEST_ENTRY, TEST_PLUGIN_ID};
+    use crate::primitives::buffers::PlanarBuffer;
+    use crate::primitives::graph::{BlockTime, ProcessContext, ProcessStatus};
+    use crate::primitives::midi::MidiEventBuffer;
+    use crate::primitives::plugins::clap::ClapBundle;
+    use crate::primitives::plugins::{AudioPortLayout, PluginInstance};
+    use crate::primitives::SampleRate;
+    use std::path::Path;
+
+    /// The in-process gain: one bundle, gain 0.5 applied on the next block,
+    /// 16 frames of latency once activated.
+    #[test]
+    fn example() {
+        let bundle = ClapBundle::from_entry(&TEST_ENTRY, "/virtual/test.clap").unwrap();
+        assert_eq!(bundle.path(), Path::new("/virtual/test.clap"));
+        let descriptors = bundle.descriptors();
+        assert_eq!(descriptors.len(), 1);
+        assert_eq!(descriptors[0].id, TEST_PLUGIN_ID);
+        assert_eq!(descriptors[0].name, "Test Gain");
+        let mut plugin = bundle.instantiate(TEST_PLUGIN_ID).unwrap();
+        assert_eq!(
+            plugin.ports(),
+            AudioPortLayout {
+                inputs: 2,
+                outputs: 2
+            }
+        );
+        assert_eq!(plugin.param_value(7).unwrap(), 1.0);
+        plugin.set_param(7, 0.25).unwrap();
+        assert_eq!(plugin.param_value(7).unwrap(), 0.25);
+        plugin.activate(SampleRate::HZ_48K, 8).unwrap();
+        assert_eq!(plugin.latency_frames(), 16);
+        plugin.set_param(7, 0.5).unwrap();
+        assert_eq!(plugin.param_value(7).unwrap(), 0.25, "queued until process");
+        let midi = MidiEventBuffer::with_capacity(0);
+        let mut input = PlanarBuffer::new(2, 8);
+        for (frame, sample) in input.channel_mut(0).iter_mut().enumerate() {
+            *sample = frame as f32 + 1.0;
+        }
+        for (frame, sample) in input.channel_mut(1).iter_mut().enumerate() {
+            *sample = -(frame as f32 + 1.0);
+        }
+        let mut output = PlanarBuffer::new(2, 8);
+        let ctx = ProcessContext {
+            sample_rate: SampleRate::HZ_48K,
+            frames: 8,
+            time: BlockTime {
+                rolling: true,
+                ..BlockTime::free_running()
+            },
+            midi: &midi,
+            input_is_silent: false,
+            input: None,
+        };
+        assert_eq!(
+            plugin.process(&ctx, &input, &mut output),
+            ProcessStatus::Normal
+        );
+        assert_eq!(plugin.param_value(7).unwrap(), 0.5);
+        assert_eq!(output.channel(0), &[0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]);
+        assert_eq!(output.channel(1)[7], -4.0);
+    }
+}

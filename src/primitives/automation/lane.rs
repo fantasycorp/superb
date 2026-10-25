@@ -15,6 +15,26 @@ pub const RECORD_EPSILON: f32 = 1e-5;
 /// A single automatable parameter: envelope, mode state, and the live
 /// [`AtomicF32`] that graph/mixer nodes already read.
 ///
+/// ```
+/// use std::sync::Arc;
+/// use superb::primitives::automation::{AutomationLane, AutomationMode, EnvelopePoint};
+/// use superb::primitives::realtime::AtomicF32;
+/// use superb::primitives::{IdGenerator, TimePosition};
+///
+/// let ids = IdGenerator::new();
+/// let target = Arc::new(AtomicF32::new(0.0));
+/// let mut lane = AutomationLane::new(ids.next(), Arc::clone(&target));
+/// lane.envelope_mut()
+///     .upsert(EnvelopePoint::linear(TimePosition::from_samples(0), 0.0));
+/// lane.envelope_mut()
+///     .upsert(EnvelopePoint::linear(TimePosition::from_samples(100), 1.0));
+/// lane.set_mode(AutomationMode::Read);
+/// let mut scratch = [0.0f32; 5];
+/// lane.apply_block(TimePosition::from_samples(0), 5, true, Some(&mut scratch));
+/// assert!((scratch[0] - 0.0).abs() < 1e-5);
+/// assert!((scratch[4] - 0.04).abs() < 1e-5);
+/// ```
+///
 /// Control thread:
 /// * edit [`envelope_mut`](AutomationLane::envelope_mut)
 /// * change mode via [`set_mode`](AutomationLane::set_mode)

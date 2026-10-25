@@ -114,6 +114,29 @@ mod tests {
         b
     }
 
+    /// A delay of 4 frames: silence stays silent, a ramp of 1..=4 comes
+    /// out one block later, and `reset` clears the tail.
+    #[test]
+    fn example() {
+        let mut line = DelayLine::new(1, 4, 4);
+        assert_eq!(line.delay(), 4);
+        let mut out = PlanarBuffer::new(1, 4);
+        assert!(line.process(None, 4, &mut out), "fresh line is silent");
+        let src = ramp(1, 1.0, 4);
+        assert!(
+            !line.process(Some(&src), 4, &mut out),
+            "output is still the old zeros but input is live"
+        );
+        assert_eq!(out.channel(0), &[0.0; 4]);
+        assert!(!line.process(None, 4, &mut out), "the ramp comes out now");
+        assert_eq!(out.channel(0), &[1.0, 2.0, 3.0, 4.0]);
+        assert!(line.process(None, 4, &mut out), "drained");
+        assert_eq!(out.channel(0), &[0.0; 4]);
+        line.reset();
+        assert!(line.process(None, 4, &mut out));
+        assert_eq!(out.channel(0), &[0.0; 4]);
+    }
+
     #[test]
     fn delays_by_exactly_n_frames_across_block_sizes() {
         let mut line = DelayLine::new(2, 5, 8);

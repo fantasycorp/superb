@@ -1,11 +1,6 @@
-//! `primitives::transport`: musical time vs sample time, and how a block
-//! is cut into segments when the loop wraps.
-//!
-//! What you'll learn:
-//! - `TempoMap` converts beats <-> samples with tempo and meter changes
-//! - Bars/beats/ticks (`Bbt`) for display
-//! - `Transport` holds the playhead and loop; `drive` returns the
-//!   `Segment`s a block covers, so nodes can render across a loop point
+//! 120 bpm in 4/4, 90 bpm from beat 8, 3/4 from bar 4. A 256-frame block
+//! that starts 100 frames before the loop end splits into 100 frames and
+//! 156 frames wrapped back to beat 4.
 //!
 //! ```text
 //! cargo run --example transport_tempo_map
@@ -16,14 +11,29 @@ use superb::primitives::{BeatPosition, Result, SampleRate, TimePosition, TimeSig
 
 fn main() -> Result<()> {
     let rate = SampleRate::HZ_48K;
-    // 120 bpm in 4/4 to start; slow to 90 bpm at bar 3 (beat 8); 3/4 from bar 4.
+    assert_eq!(rate.seconds_to_samples(1.0), 48_000);
+    // 120 bpm until beat 8, then 90. 4/4 until bar 4 (beat 12), then 3/4.
     let mut map = TempoMap::new(rate, 120.0);
     map.add_tempo(BeatPosition::new(8.0), 90.0)?;
     map.add_meter(4, TimeSignature::new(3, 4)?)?;
 
+    // Beat 7.5 is bar 2, beat 4, tick 480. Beat 12 is the first 3/4 bar.
+    // Beat 15 is the next bar. 4 beats at 90 bpm from second 4.000 is 6.667 s.
     println!("beat   bar.beat.tick   seconds   samples   bpm");
-    for beat in [0.0, 4.0, 7.5, 8.0, 12.0, 15.0] {
+    let rows = [
+        (0.0, "1.1.000", "0.000", 0, "120"),
+        (4.0, "2.1.000", "2.000", 96_000, "120"),
+        (7.5, "2.4.480", "3.750", 180_000, "120"),
+        (8.0, "3.1.000", "4.000", 192_000, "90"),
+        (12.0, "4.1.000", "6.667", 320_000, "90"),
+        (15.0, "5.1.000", "8.667", 416_000, "90"),
+    ];
+    for (beat, bbt, seconds, samples, bpm) in rows {
         let b = BeatPosition::new(beat);
+        assert_eq!(map.beat_to_bbt(b).to_string(), bbt);
+        assert_eq!(format!("{:.3}", map.beat_to_seconds(b)), seconds);
+        assert_eq!(map.beat_to_samples(b).samples(), samples);
+        assert_eq!(format!("{:.0}", map.tempo_at(b)), bpm);
         println!(
             "{:>4}   {:<14}  {:>7.3}   {:>7}   {:>3}",
             beat,
@@ -33,14 +43,14 @@ fn main() -> Result<()> {
             map.tempo_at(b)
         );
     }
-    // And back: a sample position to a beat.
+    // Two seconds is still inside the 120 bpm region: beat 4.000.
     let two_seconds = TimePosition::from_seconds(2.0, rate);
-    println!(
-        "2.000 s = beat {:.3}",
-        map.samples_to_beat(two_seconds).beats()
-    );
+    let beat = map.samples_to_beat(two_seconds).beats();
+    assert_eq!(format!("{beat:.3}"), "4.000");
+    println!("2.000 s = beat {beat:.3}");
 
-    // A transport on that map, looping bar 2 (beats 4..8).
+    // Loop bar 2, samples 96000..192000. The playhead sits 100 frames
+    // before the end, at 191900.
     let mut transport = Transport::with_tempo_map(map);
     let range = LoopRange::new(
         transport
@@ -50,15 +60,31 @@ fn main() -> Result<()> {
             .tempo_map()
             .beat_to_samples(BeatPosition::new(8.0)),
     )?;
+    assert_eq!(range.start().samples(), 96_000);
+    assert_eq!(range.end().samples(), 192_000);
     transport.set_loop(Some(range));
     transport.set_loop_enabled(true);
-    // Start 100 frames before the loop end.
     transport.seek(range.end().offset(-100));
+    assert_eq!(transport.position().samples(), 191_900);
     transport.play();
 
-    // One 256-frame block straddles the loop end: two segments.
+    // 100 frames finish the loop, then 156 frames start at sample 96000.
+    // The playhead is sample 96156, beat 4.006.
     println!("\nblock of 256 frames across the loop point:");
-    for seg in transport.advance(256) {
+    let segs: Vec<_> = transport.advance(256).collect();
+    assert_eq!(segs.len(), 2);
+    assert_eq!(segs[0].block_offset, 0);
+    assert_eq!(segs[0].frames, 100);
+    assert_eq!(segs[0].start.samples(), 191_900);
+    assert!(!segs[0].wrapped);
+    assert_eq!(segs[1].block_offset, 100);
+    assert_eq!(segs[1].frames, 156);
+    assert_eq!(segs[1].start.samples(), 96_000);
+    assert!(segs[1].wrapped);
+    assert_eq!(segs[0].frames + segs[1].frames, 256);
+    assert_eq!(transport.position().samples(), 96_156);
+    assert_eq!(format!("{:.3}", transport.beat_position().beats()), "4.006");
+    for seg in &segs {
         println!(
             "  offset {:>3}, {:>3} frames, from sample {}{}",
             seg.block_offset,
@@ -76,9 +102,14 @@ fn main() -> Result<()> {
         transport.beat_position().beats()
     );
 
-    // Stopped transports still yield one segment so nodes see a full block.
+    // Stopped, the same 256-frame call is one segment and the playhead
+    // stays at sample 96156.
+    let at = transport.position().samples();
     transport.stop();
     let segs: Vec<_> = transport.advance(256).collect();
+    assert_eq!(segs.len(), 1);
+    assert_eq!(segs[0].frames, 256);
+    assert_eq!(transport.position().samples(), at);
     println!(
         "stopped: {} segment(s) of {} frames, position unchanged",
         segs.len(),

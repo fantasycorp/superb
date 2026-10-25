@@ -42,6 +42,28 @@ pub struct TimestampedMessage {
 /// and never grows afterwards: [`MidiEventBuffer::push`] returns
 /// [`SuperbError::CapacityExceeded`] instead of reallocating, which makes the
 /// buffer safe to `push` into from an audio callback.
+///
+/// ```
+/// use superb::primitives::midi::{MidiChannel, MidiEvent, MidiEventBuffer, MidiMessage};
+/// use superb::primitives::SuperbError;
+///
+/// let message = MidiMessage::note_on(MidiChannel::new(0).unwrap(), 60, 64).unwrap();
+/// let mut buffer = MidiEventBuffer::with_capacity(3);
+/// assert_eq!(buffer.capacity(), 3);
+/// buffer.push(MidiEvent { frame: 0, message }).unwrap();
+/// buffer.push(MidiEvent { frame: 1, message }).unwrap();
+/// buffer.push(MidiEvent { frame: 2, message }).unwrap();
+/// assert_eq!(buffer.len(), 3);
+/// assert_eq!(
+///     buffer.push(MidiEvent { frame: 3, message }).unwrap_err(),
+///     SuperbError::CapacityExceeded {
+///         what: "midi_event_buffer",
+///         capacity: 3
+///     }
+/// );
+/// assert_eq!(buffer.len(), 3);
+/// assert_eq!(buffer.capacity(), 3);
+/// ```
 #[derive(Clone, Debug)]
 pub struct MidiEventBuffer {
     events: Vec<MidiEvent>,

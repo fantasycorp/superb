@@ -14,6 +14,23 @@ pub type RawId = u64;
 ///
 /// One generator is typically owned per memory/session; the SDK never
 /// uses a hidden global so tests remain deterministic.
+///
+/// ```
+/// use superb::primitives::{IdGenerator, NodeId, TrackId};
+///
+/// let gen = IdGenerator::new();
+/// let a: NodeId = gen.next();
+/// let b: NodeId = gen.next();
+/// assert!(a.is_valid());
+/// assert!(b > a);
+/// assert_eq!(b.raw(), a.raw() + 1);
+/// assert!(!NodeId::INVALID.is_valid());
+///
+/// let track = TrackId::from_raw(5);
+/// assert_eq!(track.raw(), 5);
+/// assert_eq!(format!("{track}"), "track#5");
+/// assert_eq!(TrackId::label(), "track");
+/// ```
 #[derive(Debug)]
 pub struct IdGenerator {
     next: AtomicU64,

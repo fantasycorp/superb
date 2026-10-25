@@ -162,6 +162,10 @@ impl TempoMap {
     /// use superb::primitives::transport::TempoMap;
     ///
     /// let mut map = TempoMap::new(SampleRate::HZ_48K, 120.0);
+    /// // Steady 120: one beat is 24 000 samples, four beats are 2 seconds.
+    /// assert_eq!(map.beat_to_samples(BeatPosition::new(1.0)).samples(), 24_000);
+    /// assert!((map.beat_to_seconds(BeatPosition::new(4.0)) - 2.0).abs() < 1e-9);
+    /// assert!((map.seconds_to_beat(2.0).beats() - 4.0).abs() < 1e-9);
     /// map.set_tempo_ramp(BeatPosition::ZERO, true).unwrap(); // ramp from beat 0 ...
     /// map.add_tempo(BeatPosition::new(4.0), 60.0).unwrap();  // ... down to 60 at beat 4
     /// assert_eq!(map.tempo_at(BeatPosition::new(2.0)), 90.0);

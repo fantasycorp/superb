@@ -10,6 +10,23 @@ use crate::primitives::{Result, SuperbError};
 /// [`MidiChannel::number`] and the [`fmt::Display`] impl use that 1-based
 /// convention, while [`MidiChannel::index`] returns the raw 0-based value
 /// used in status bytes.
+///
+/// ```
+/// use superb::primitives::midi::MidiChannel;
+/// use superb::primitives::SuperbError;
+///
+/// let channel = MidiChannel::new(0).unwrap();
+/// assert_eq!(channel.index(), 0);
+/// assert_eq!(channel.number(), 1);
+/// assert_eq!(channel.to_string(), "1");
+/// assert_eq!(MidiChannel::new(15).unwrap().to_string(), "16");
+/// assert_eq!(
+///     MidiChannel::new(16),
+///     Err(SuperbError::InvalidArgument {
+///         what: "midi_channel"
+///     })
+/// );
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MidiChannel(u8);
 

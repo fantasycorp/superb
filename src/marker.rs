@@ -5,6 +5,27 @@
 //! an undo step, and nothing here rebuilds the mixer.
 //!
 //! Made of `superb::primitives::session::Marker` and its commands.
+//!
+//! ```
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{marker, session};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-marker-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let verse = marker::add(&mut session, "verse", TimePosition::from_samples(100))?;
+//! assert_eq!(session.memory.markers().len(), 1);
+//! for at in [200, 300, 400] {
+//!     marker::move_to(&mut session, verse, TimePosition::from_samples(at))?;
+//! }
+//! assert_eq!(
+//!     session.memory.marker(verse).unwrap().position(),
+//!     TimePosition::from_samples(400)
+//! );
+//! marker::rename(&mut session, verse, "chorus")?;
+//! assert_eq!(session.memory.marker(verse).unwrap().name, "chorus");
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::session::commands::{self, AddMarker, MoveMarker, RemoveMarker};
 use crate::primitives::session::Marker;

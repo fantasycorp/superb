@@ -1,4 +1,22 @@
 //! Lock-free floating point atomics for parameter sharing.
+//!
+//! ```
+//! use core::sync::atomic::Ordering;
+//! use superb::primitives::realtime::{AtomicF32, AtomicF64};
+//!
+//! let value = AtomicF32::new(0.0);
+//! value.set(1.5);
+//! assert_eq!(value.get().to_bits(), 1.5f32.to_bits());
+//! let wide = AtomicF64::new(2.5);
+//! assert_eq!(wide.get(), 2.5);
+//! wide.set(-7.25);
+//! assert_eq!(wide.load(Ordering::SeqCst), -7.25);
+//!
+//! let peak = AtomicF32::new(0.0);
+//! assert_eq!(peak.fetch_max(0.5, Ordering::Relaxed), 0.0);
+//! assert_eq!(peak.fetch_max(0.25, Ordering::Relaxed), 0.5);
+//! assert_eq!(peak.get(), 0.5);
+//! ```
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 

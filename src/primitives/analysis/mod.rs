@@ -16,6 +16,14 @@
 //!   by cross-correlation, with a confidence.
 //! * [`silence`]: `stretches` under a threshold, and `trimmed`, the span
 //!   that is not.
+//!
+//! ```
+//! use superb::primitives::analysis::meter;
+//!
+//! assert_eq!(meter::peak(&[]), 0.0);
+//! assert_eq!(meter::rms(&[]), 0.0);
+//! assert_eq!(meter::peak(&[0.1, -0.7, 0.3]), 0.7);
+//! ```
 
 mod fft;
 pub(crate) mod filter;

@@ -1,10 +1,5 @@
-//! Offline demo: a linear gain ramp applied sample-accurately into an
-//! `Arc<AtomicF32>`, then printed as a short ASCII meter.
-//!
-//! What you'll learn:
-//! - How an `AutomationLane` drives a shared atomic from envelope points
-//! - Why `Arc` + atomics let the UI/control thread and audio thread share a float
-//! - `mut`, block processing, and a tiny closure for formatting
+//! Read mode fills a gain that runs from 0 at sample 0 to 1 at sample 200,
+//! then holds. Each 32-sample block stores its first sample in the atomic.
 //!
 //! ```text
 //! cargo run --example automation_gain_ramp
@@ -19,56 +14,80 @@ use superb::primitives::realtime::AtomicF32;
 use superb::primitives::{IdGenerator, TimePosition};
 
 fn main() {
-    // IdGenerator hands out unique IDs for lanes, nodes, tracks, etc.
     let ids = IdGenerator::new();
-
-    // Arc = atomically reference-counted shared ownership.
-    // AtomicF32 is a lock-free float the audio code can read without mutexes.
-    // Both the lane and our print loop hold a clone of the same Arc.
     let gain = Arc::new(AtomicF32::new(0.0));
-
-    // `mut` because we will edit the lane's envelope and mode below.
-    // Arc::clone(&gain) bumps the refcount (cheap) — it does not deep-copy the float.
     let mut lane = AutomationLane::new(ids.next(), Arc::clone(&gain));
 
-    // Envelope: 0 → 1 over 200 samples, then hold (Read mode follows the curve).
-    // envelope_mut() borrows the envelope uniquely so we can upsert points.
+    // Linear from sample 0 to sample 200, then the last point holds.
     lane.envelope_mut()
         .upsert(EnvelopePoint::linear(TimePosition::from_samples(0), 0.0));
     lane.envelope_mut()
         .upsert(EnvelopePoint::linear(TimePosition::from_samples(200), 1.0));
-    // Read = playback follows the envelope into the atomic (no writing back).
     lane.set_mode(AutomationMode::Read);
+    assert!(lane.evaluate(TimePosition::from_samples(0)).abs() < 1e-6);
+    assert!((lane.evaluate(TimePosition::from_samples(200)) - 1.0).abs() < 1e-6);
+    assert!((lane.evaluate(TimePosition::from_samples(256)) - 1.0).abs() < 1e-6);
 
-    // Process in fixed-size "blocks" — the same idea as a real-time audio callback.
     let block = 32usize;
     let mut pos = TimePosition::ZERO;
-    // Scratch holds one sample of ramp value per frame in this block.
-    // vec![value; n] allocates a Vec of length n filled with `value`.
     let mut scratch = vec![0.0f32; block];
+    // Eight blocks. The atomic matches the first sample. Printed rows:
+    // t=0 0.000..0.155, 32 0.160..0.315, 64 0.320..0.475, 96 0.480..0.635,
+    // 128 0.640..0.795, 160 0.800..0.955, 192 0.960..1.000, 224 1.000..1.000.
+    let rows = [
+        (0, "0.000", "0.155"),
+        (32, "0.160", "0.315"),
+        (64, "0.320", "0.475"),
+        (96, "0.480", "0.635"),
+        (128, "0.640", "0.795"),
+        (160, "0.800", "0.955"),
+        (192, "0.960", "1.000"),
+        (224, "1.000", "1.000"),
+    ];
 
     println!("sample-accurate gain ramp (Read mode), block={block}");
-    for _ in 0..8 {
-        // apply_block writes per-sample values into scratch and updates the atomic
-        // to the last sample (what a continuous control would "settle" at).
+    for (i, _) in rows.iter().enumerate() {
         lane.apply_block(pos, block, true, Some(&mut scratch));
         let first = scratch[0];
         let last = scratch[block - 1];
+        let sample = pos.samples();
+        let ramp = |s: i64| -> f32 {
+            if s >= 200 {
+                1.0
+            } else {
+                s as f32 / 200.0
+            }
+        };
+        assert_eq!(sample, rows[i].0);
+        assert!((first - ramp(sample)).abs() < 1e-6);
+        assert!((last - ramp(sample + block as i64 - 1)).abs() < 1e-6);
+        assert!((gain.get() - first).abs() < 1e-6);
+        assert_eq!(format!("{first:.3}"), rows[i].1);
+        assert_eq!(format!("{last:.3}"), rows[i].2);
+        assert_eq!(format!("{:.3}", gain.get()), rows[i].1);
 
-        // Closure: |v| means "take one f32 named v". It builds a 20-char meter.
+        // Twenty cells, one hash per 0.05 of the block's last sample.
         let bar = |v: f32| {
             let n = (v * 20.0).round().clamp(0.0, 20.0) as usize;
             format!("{}{}", "#".repeat(n), ".".repeat(20 - n))
         };
+        let drawn = bar(last);
+        assert_eq!(drawn.len(), 20);
+        assert_eq!(
+            drawn.matches('#').count(),
+            (last * 20.0).round().clamp(0.0, 20.0) as usize
+        );
         println!(
             "t={:>4}  atomic={:.3}  block=[{:.3} .. {:.3}]  {}",
             pos.samples(),
             gain.get(),
             first,
             last,
-            bar(last)
+            drawn
         );
-        // advance_block moves the timeline forward by `block` samples.
         pos = advance_block(pos, block);
     }
+    // Eight blocks of 32 end at sample 256, on the hold.
+    assert_eq!(pos.samples(), 256);
+    assert!((gain.get() - 1.0).abs() < 1e-6);
 }

@@ -82,6 +82,20 @@ impl Biquad {
 mod tests {
     use super::*;
 
+    /// A 6 kHz band-pass passes that frequency, rejects 200 Hz, and a
+    /// reset filter is silent on a zero sample.
+    #[test]
+    fn example() {
+        let bp = Biquad::band_pass(48_000.0, 6_000.0, 1.0);
+        assert!(gain_db(&bp, 6_000.0, 48_000.0).abs() < 0.1);
+        assert!(gain_db(&bp, 200.0, 48_000.0) < -25.0);
+        assert!(gain_db(&bp, 20_000.0, 48_000.0) < -10.0);
+        let mut filter = bp;
+        filter.process(1.0);
+        filter.reset();
+        assert_eq!(filter.process(0.0), 0.0);
+    }
+
     /// Steady-state gain in dB of `filter` at `hz`, from a second of sine.
     pub(crate) fn gain_db(filter: &Biquad, hz: f64, rate: f64) -> f64 {
         let mut f = *filter;

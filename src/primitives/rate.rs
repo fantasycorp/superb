@@ -9,6 +9,20 @@ use crate::primitives::{Result, SuperbError};
 /// Stored as an integer because every rate a DAW encounters in practice is
 /// integral (44.1k, 48k, 88.2k, 96k, 176.4k, 192k, ...). Use
 /// [`SampleRate::as_f64`] for conversions.
+///
+/// ```
+/// use superb::primitives::SampleRate;
+///
+/// assert_eq!(SampleRate::default(), SampleRate::HZ_48K);
+/// assert_eq!(SampleRate::CD.to_string(), "44100 Hz");
+/// assert_eq!(SampleRate::CD.seconds_to_samples(0.5), 22_050);
+/// assert_eq!(
+///     SampleRate::HZ_48K.seconds_to_samples(1.0) as u32,
+///     SampleRate::HZ_48K.hz()
+/// );
+/// assert!(SampleRate::new(999).is_err());
+/// assert!(SampleRate::new(1_000).is_ok());
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SampleRate(u32);
 

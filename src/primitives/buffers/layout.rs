@@ -3,6 +3,17 @@
 use core::fmt;
 
 /// Describes how many channels a buffer or node carries.
+///
+/// ```
+/// use superb::primitives::buffers::ChannelLayout;
+///
+/// assert_eq!(ChannelLayout::from_count(1), ChannelLayout::Mono);
+/// assert_eq!(ChannelLayout::from_count(2), ChannelLayout::Stereo);
+/// assert_eq!(ChannelLayout::from_count(6), ChannelLayout::Multi(6));
+/// assert_eq!(ChannelLayout::Multi(6).channels(), 6);
+/// assert_eq!(ChannelLayout::Multi(6).to_string(), "6ch");
+/// assert_eq!(ChannelLayout::default().channels(), 2);
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ChannelLayout {
     /// A single channel.

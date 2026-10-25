@@ -1,15 +1,25 @@
 //! Allocation counting for "no allocation in `process()`" tests.
 //!
-//! Install [`CountingAllocator`] as the global allocator in a test binary:
+//! Install [`CountingAllocator`] as the global allocator. A doctest is its
+//! own binary, so the allocator installed here is the one the checks see:
 //!
-//! ```ignore
+//! ```
 //! #[global_allocator]
-//! static ALLOC: superb::primitives::realtime::CountingAllocator = superb::primitives::realtime::CountingAllocator::system();
+//! static ALLOC: superb::primitives::realtime::CountingAllocator =
+//!     superb::primitives::realtime::CountingAllocator::system();
 //!
-//! #[test]
-//! fn process_does_not_allocate() {
-//!     superb::primitives::realtime::assert_no_alloc(|| graph.process());
-//! }
+//! let (n, v) = superb::primitives::realtime::count_allocations(|| vec![1u8, 2, 3]);
+//! assert!(n >= 1, "Vec::from should allocate");
+//! assert_eq!(v.len(), 3);
+//!
+//! let mut arr = [0.0f32; 64];
+//! let sum = superb::primitives::realtime::assert_no_alloc(|| {
+//!     for (i, s) in arr.iter_mut().enumerate() {
+//!         *s = i as f32 * 0.5;
+//!     }
+//!     arr.iter().sum::<f32>()
+//! });
+//! assert!(sum > 0.0);
 //! ```
 //!
 //! Without the allocator installed, [`assert_no_alloc`] panics with a clear

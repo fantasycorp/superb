@@ -7,6 +7,34 @@
 //!
 //! Made of `superb::primitives::io` (`Engine::live`) (`EngineHandle::send`, the
 //! position and state atomics).
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::transport::TransportState;
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{clip, session, track, transport};
+//!
+//! let folder = std::env::temp_dir().join(format!(
+//!     "superb-transport-example-{}",
+//!     std::process::id()
+//! ));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! let mut tone = PlanarBuffer::new(2, 400);
+//! tone.fill(0.5);
+//! session.audio.insert("tone.wav", tone);
+//! clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! transport::start(&mut session)?;
+//! let audio = session::steps::render_blocks(&mut session, 10)?;
+//! assert_eq!(audio.frames(), 640);
+//! let level = audio.channel(0)[300].abs();
+//! assert!(level > 0.3 && level < 0.4, "level {level}");
+//! assert_eq!(transport::playhead(&session), TimePosition::from_samples(640));
+//! assert_eq!(transport::state(&session), TransportState::Playing);
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::io::EngineCommand;
 use crate::primitives::transport::TransportState;

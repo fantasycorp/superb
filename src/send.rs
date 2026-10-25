@@ -10,6 +10,47 @@
 //!
 //! Made of `superb::primitives::session::commands` (the memory side) and
 //! `superb::primitives::mixer::SendParams` (the live side).
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::mixer::{PanLaw, SendTap};
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{clip, send, session, track, transport};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-send-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! let mut tone = PlanarBuffer::new(2, 4_000);
+//! tone.fill(0.5);
+//! session.audio.insert("tone.wav", tone);
+//! clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! session::steps::rebuild(&mut session)?;
+//! for (_, strip) in &session.mixer.strips {
+//!     strip.set_pan_law(PanLaw::Balance);
+//! }
+//! transport::start(&mut session)?;
+//! let direct = {
+//!     let audio = session::steps::render_blocks(&mut session, 4)?;
+//!     audio.channel(0)[audio.frames() - 1]
+//! };
+//! assert!((direct - 0.5).abs() < 1e-5);
+//!
+//! let room = track::add(&mut session, "room", TrackKind::Bus)?;
+//! let id = send::add(&mut session, vox, room, 0.0, SendTap::PostFader)?;
+//! assert_eq!(session.memory.send(id).unwrap().bus(), room);
+//! session::steps::rebuild(&mut session)?;
+//! for (_, strip) in &session.mixer.strips {
+//!     strip.set_pan_law(PanLaw::Balance);
+//! }
+//! let summed = {
+//!     let audio = session::steps::render_blocks(&mut session, 4)?;
+//!     audio.channel(0)[audio.frames() - 1]
+//! };
+//! assert!((summed - direct * 2.0).abs() < 1e-3, "track + unity send");
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::mixer::SendTap;
 use crate::primitives::session::commands::{self, AddSend, RemoveSend};

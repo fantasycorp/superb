@@ -61,6 +61,23 @@ impl TimeDuration {
 ///
 /// Positions are signed so that pre-roll and count-in (negative positions)
 /// can be represented without special cases.
+///
+/// ```
+/// use superb::primitives::{SampleRate, TimePosition, TimeSignature};
+///
+/// let rate = SampleRate::HZ_48K;
+/// let position = TimePosition::from_seconds(1.25, rate);
+/// assert_eq!(position.samples(), 60_000);
+/// assert_eq!(position.to_seconds(rate), 1.25);
+/// let preroll = TimePosition::from_seconds(-2.0, rate);
+/// assert_eq!(preroll.samples(), -96_000);
+/// assert!(preroll < TimePosition::ZERO);
+///
+/// let six_eight = TimeSignature::new(6, 8).unwrap();
+/// assert_eq!(six_eight.bar_length().beats(), 3.0);
+/// assert_eq!(six_eight.beat_length().beats(), 0.5);
+/// assert_eq!(six_eight.to_string(), "6/8");
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TimePosition(i64);
 

@@ -1,4 +1,24 @@
 //! Offline (faster-than-real-time) rendering.
+//!
+//! ```
+//! use superb::primitives::graph::nodes::ConstantNode;
+//! use superb::primitives::graph::AudioGraph;
+//! use superb::primitives::io::offline::render;
+//! use superb::primitives::io::Engine;
+//! use superb::primitives::transport::Transport;
+//! use superb::primitives::SampleRate;
+//!
+//! let mut graph = AudioGraph::new();
+//! let constant = graph.add_node(Box::new(ConstantNode::new(0.5, 2)));
+//! graph.set_output(constant)?;
+//! let mut engine = Engine::new(graph, Transport::new(SampleRate::HZ_48K, 120.0));
+//! let audio = render(&mut engine, SampleRate::HZ_48K, 64, 1_000)?;
+//! assert_eq!(audio.frames(), 1_000);
+//! assert_eq!(audio.channels(), 2);
+//! assert!(audio.channel(1).iter().all(|&sample| sample == 0.5));
+//! assert_eq!(engine.stats().blocks, 16);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::buffers::PlanarBuffer;
 use crate::primitives::graph::BlockProcessor;

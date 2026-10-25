@@ -3,6 +3,15 @@
 //!
 //! "Is this microphone live?" and "cut the dead air" are the same
 //! question asked of a recording and of a block.
+//!
+//! ```
+//! use superb::primitives::analysis::silence::{stretches, trimmed};
+//!
+//! let samples = [0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.4, 0.0, 0.0, 0.0];
+//! assert_eq!(stretches(&samples, 0.1, 2), vec![0..2, 3..6, 7..10]);
+//! let phrase = [0.0, 0.01, 0.5, 0.0, 0.4, 0.01, 0.0];
+//! assert_eq!(trimmed(&phrase, 0.1), 2..5);
+//! ```
 
 use core::ops::Range;
 

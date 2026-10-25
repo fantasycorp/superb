@@ -3,6 +3,26 @@
 //! Independent of any audio backend: `superb::primitives::io::device`
 //! fills it from a real input, and anything else (a test, a file reader, a
 //! network stream) can fill it the same way.
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::io::capture::capture_queue;
+//!
+//! let (mut tx, mut rx) = capture_queue(1, 16, 2)?;
+//! let mut src = PlanarBuffer::new(1, 16);
+//! src.set_frames(8)?;
+//! for (i, sample) in src.channel_mut(0).iter_mut().enumerate() {
+//!     *sample = i as f32 * 0.1;
+//! }
+//! assert!(tx.push(&src, 99));
+//! let block = rx.pop().unwrap();
+//! assert_eq!(block.block_start_us(), 99);
+//! assert_eq!(block.frames(), 8);
+//! assert!((block.buffer().channel(0)[7] - 0.7).abs() < 1e-6);
+//! rx.recycle(block);
+//! assert!(rx.is_empty());
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

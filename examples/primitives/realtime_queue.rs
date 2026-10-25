@@ -1,11 +1,6 @@
-//! `primitives::realtime`: how the UI talks to the audio thread without
-//! ever making it wait.
-//!
-//! What you'll learn:
-//! - `spsc::channel`: a wait-free queue, one producer, one consumer, fixed
-//!   capacity; `push` fails instead of blocking when it is full
-//! - `AtomicF32`: a knob both threads can read and write
-//! - The audio side pops at the start of each block and never allocates
+//! The UI pushes into an 8-deep queue and the audio thread pops. A push
+//! past 8 is refused. Which block sees play, seek or stop follows the
+//! sleeps, so those printed positions are not pinned down.
 //!
 //! ```text
 //! cargo run --example realtime_queue
@@ -28,13 +23,16 @@ enum Message {
 }
 
 fn main() -> Result<()> {
-    // Room for 8 messages between blocks; the queue never grows.
+    // The queue holds 8 messages and does not grow.
     let (mut to_audio, mut from_ui) = spsc::channel::<Message>(8);
-    // A fader shared by value: the UI stores, the audio thread loads.
+    assert_eq!(to_audio.capacity(), 8);
+    // The fader starts at 1. The UI later stores 0.5.
     let fader = Arc::new(AtomicF32::new(1.0));
+    assert!((fader.get() - 1.0).abs() < 1e-6);
     let fader_for_audio = Arc::clone(&fader);
 
-    // The "audio thread": 20 blocks, 5 ms apart, applying what has arrived.
+    // Twenty blocks, 5 ms apart. Each playing block adds 256 frames.
+    // Blocks 4, 9, 14 and 19 print whatever has arrived.
     let audio = thread::spawn(move || {
         let mut playing = false;
         let mut position = 0i64;
@@ -58,16 +56,15 @@ fn main() -> Result<()> {
         from_ui.is_abandoned()
     });
 
-    // The "UI thread".
     to_audio.push(Message::Play).ok();
     thread::sleep(Duration::from_millis(30));
     fader.set(0.5);
+    assert!((fader.get() - 0.5).abs() < 1e-6);
     to_audio.push(Message::Seek(48_000)).ok();
     thread::sleep(Duration::from_millis(30));
     to_audio.push(Message::Stop).ok();
 
-    // A full queue refuses the message rather than waiting: the UI decides
-    // what to do (drop it, retry next frame, show a warning).
+    // Twelve Seek(0) pushes. The ones that do not fit are returned.
     let mut refused = 0;
     for _ in 0..12 {
         if to_audio.push(Message::Seek(0)).is_err() {
@@ -79,7 +76,7 @@ fn main() -> Result<()> {
         to_audio.capacity()
     );
 
-    // Dropping the producer is how the audio side learns the UI is gone.
+    // Dropping the sender is what makes the audio side see it as gone.
     drop(to_audio);
     let ui_gone_when_audio_finished = audio.join().expect("audio thread");
     println!("audio saw the UI side dropped: {ui_gone_when_audio_finished}");

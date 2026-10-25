@@ -1,4 +1,25 @@
 //! Finding plugins on disk.
+//!
+//! ```
+//! use std::path::PathBuf;
+//! use superb::primitives::plugins::scan::{default_search_paths, scan_directory};
+//! use superb::primitives::plugins::vst3;
+//! use superb::primitives::plugins::PluginFormat;
+//!
+//! std::env::set_var("CLAP_PATH", "/tmp/superb-clap-a:/tmp/superb-clap-b");
+//! let paths = default_search_paths(PluginFormat::Clap);
+//! assert!(paths.contains(&PathBuf::from("/tmp/superb-clap-a")));
+//! assert!(paths.contains(&PathBuf::from("/tmp/superb-clap-b")));
+//! assert!(paths.len() >= 3, "{paths:?}");
+//! let vst3_paths = default_search_paths(PluginFormat::Vst3);
+//! assert!(vst3_paths
+//!     .iter()
+//!     .any(|path| path.to_string_lossy().to_ascii_lowercase().contains("vst3")));
+//! assert_eq!(
+//!     scan_directory(std::env::temp_dir(), PluginFormat::Vst3).unwrap_err(),
+//!     vst3::unsupported()
+//! );
+//! ```
 
 use std::path::{Path, PathBuf};
 

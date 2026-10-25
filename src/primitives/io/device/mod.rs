@@ -80,6 +80,23 @@ where
 mod tests {
     use super::*;
 
+    /// A cpal stream instant is microseconds, and interleaved device
+    /// samples land in planar channel order.
+    #[test]
+    fn example() {
+        assert_eq!(
+            stream_instant_us(cpal::StreamInstant::from_micros(1_234_567)),
+            1_234_567
+        );
+        assert_eq!(stream_instant_us(cpal::StreamInstant::from_nanos(2_500)), 2);
+        assert_eq!(stream_instant_us(cpal::StreamInstant::new(0, 0)), 0);
+        let interleaved = [0.0f32, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let mut planar = PlanarBuffer::new(2, 3);
+        deinterleave_from_device(&interleaved, 2, &mut planar);
+        assert_eq!(planar.channel(0), &[0.0, 2.0, 4.0]);
+        assert_eq!(planar.channel(1), &[1.0, 3.0, 5.0]);
+    }
+
     #[test]
     fn stream_instant_converts_to_microseconds() {
         assert_eq!(

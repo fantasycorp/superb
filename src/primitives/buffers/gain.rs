@@ -1,4 +1,15 @@
 //! Decibel / linear gain helpers.
+//!
+//! ```
+//! use superb::primitives::buffers::gain::{db_to_linear, linear_to_db, SILENCE_DB};
+//!
+//! assert_eq!(db_to_linear(0.0), 1.0);
+//! assert!((db_to_linear(-6.0206) - 0.5).abs() < 1e-4);
+//! assert!((linear_to_db(0.5) + 6.0206).abs() < 1e-3);
+//! assert_eq!(linear_to_db(1.0), 0.0);
+//! assert_eq!(db_to_linear(SILENCE_DB), 0.0);
+//! assert_eq!(linear_to_db(0.0), SILENCE_DB);
+//! ```
 
 /// Gain below which [`db_to_linear`] returns exactly `0.0` (true silence).
 pub const SILENCE_DB: f32 = -120.0;

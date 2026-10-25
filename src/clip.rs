@@ -14,6 +14,34 @@
 //!
 //! Made of `superb::primitives::session` (`Clip`, `ClipSource` and the
 //! clip commands) and the audio held on the `Session`.
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{clip, session, track};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-clip-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! session
+//!     .audio
+//!     .insert("takes/take 1.wav", PlanarBuffer::new(2, 480));
+//! let id = clip::add(
+//!     &mut session,
+//!     vox,
+//!     "takes/take 1.wav",
+//!     TimePosition::from_samples(100),
+//! )?;
+//! let placed = session.memory.clip(id).unwrap();
+//! assert_eq!(placed.name, "take 1");
+//! assert_eq!(placed.start().samples(), 100);
+//! assert_eq!(placed.length().samples(), 480);
+//! assert_eq!(session.memory.clip_track(id).unwrap(), vox);
+//! assert!(clip::add(&mut session, vox, "missing.wav", TimePosition::ZERO).is_err());
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::session::commands::{
     self, AddClip, AddNote, ArchiveClip, ChangeNote, MoveClip, RemoveNote, SplitClip, TrimClip,

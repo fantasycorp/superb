@@ -164,6 +164,26 @@ pub struct TransportSnapshot {
 /// position stay consistent. It is a plain single-owner value: in a live
 /// engine it lives on the audio thread and control messages reach it via a
 /// queue (see `primitives::realtime`).
+///
+/// ```
+/// use superb::primitives::transport::{Transport, TransportState};
+/// use superb::primitives::{SampleRate, TimePosition};
+///
+/// let mut transport = Transport::new(SampleRate::HZ_48K, 120.0);
+/// transport.set_punch(
+///     Some(TimePosition::from_samples(100)),
+///     Some(TimePosition::from_samples(250)),
+/// );
+/// assert_eq!(transport.punch().0, Some(TimePosition::from_samples(100)));
+/// transport.play();
+/// transport.advance(64);
+/// assert_eq!(transport.state(), TransportState::Playing);
+/// transport.advance(64);
+/// assert_eq!(transport.state(), TransportState::Recording);
+/// transport.advance(128);
+/// assert_eq!(transport.state(), TransportState::Playing);
+/// assert_eq!(transport.position(), TimePosition::from_samples(256));
+/// ```
 #[derive(Clone, Debug)]
 pub struct Transport {
     state: TransportState,

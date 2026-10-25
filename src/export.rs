@@ -10,6 +10,36 @@
 //! `superb::primitives::io::files` (resampling, feature `files`),
 //! `superb::primitives::io::wav` (the files) and
 //! `superb::primitives::analysis::meter` (what a stem set measures).
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{clip, export, session, track};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-export-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 256)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! let mut tone = PlanarBuffer::new(2, 1_000);
+//! tone.fill(0.5);
+//! session.audio.insert("tone.wav", tone);
+//! clip::add(
+//!     &mut session,
+//!     vox,
+//!     "tone.wav",
+//!     TimePosition::from_samples(500),
+//! )?;
+//! let whole = export::bounce(&mut session, folder.join("session.wav"), export::Bounce::default())?;
+//! assert_eq!(whole.frames(), 1_500);
+//! assert!(whole.channel(0)[..500].iter().all(|&s| s == 0.0));
+//! assert!(whole.channel(0)[1_000].abs() > 0.3);
+//! assert_eq!(
+//!     superb::transport::playhead(&session),
+//!     TimePosition::ZERO
+//! );
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use std::path::Path;
 

@@ -53,6 +53,31 @@ pub const METER_CHANNELS: usize = 2;
 /// Control surface of a channel strip (track or bus).
 ///
 /// All setters are safe from any thread; the audio thread only loads.
+///
+/// ```
+/// use superb::primitives::mixer::{PanLaw, SendParams, StripParams};
+///
+/// let (left, right) = PanLaw::ConstantPower.gains(0.0);
+/// assert!((left - core::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
+/// assert!((left - right).abs() < 1e-6);
+/// assert_eq!(PanLaw::Balance.gains(0.5), (0.5, 1.0));
+/// assert_eq!(PanLaw::Balance.gains(-1.0), (1.0, 0.0));
+/// assert_eq!(PanLaw::default(), PanLaw::ConstantPower);
+///
+/// let strip = StripParams::new(None);
+/// assert_eq!(strip.gain(), 1.0);
+/// assert_eq!(strip.volume_db(), 0.0);
+/// strip.set_volume_db(-6.0206);
+/// assert!((strip.gain() - 0.5).abs() < 1e-4);
+/// strip.set_pan(2.0);
+/// assert_eq!(strip.pan(), 1.0);
+/// assert_eq!(strip.peak(0), 0.0);
+///
+/// let send = SendParams::new(0.5);
+/// assert_eq!(send.effective_level(), 0.5);
+/// send.set_enabled(false);
+/// assert_eq!(send.effective_level(), 0.0);
+/// ```
 #[derive(Debug)]
 pub struct StripParams {
     gain: AtomicF32,

@@ -17,6 +17,20 @@ use core::fmt;
 ///
 /// When **not playing**, every mode leaves the parameter alone (UI / last
 /// value wins) and nothing is recorded.
+///
+/// ```
+/// use superb::primitives::automation::{AutomationMode, AutomationState};
+///
+/// let mut state = AutomationState::with_mode(AutomationMode::Touch);
+/// assert!(state.wants_read(true));
+/// assert!(!state.wants_write(true));
+/// state.begin_touch();
+/// assert!(!state.wants_read(true));
+/// assert!(state.wants_write(true));
+/// state.end_touch();
+/// assert!(state.wants_read(true));
+/// assert!(!state.wants_write(true));
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum AutomationMode {

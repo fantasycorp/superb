@@ -14,6 +14,29 @@ const CHUNK: usize = 1024;
 
 /// Number of frames [`resample`] produces for `frames` input frames:
 /// `ceil(frames * to / from)`, computed in integer arithmetic.
+///
+/// ```
+/// use superb::primitives::buffers::PlanarBuffer;
+/// use superb::primitives::io::files::{resample, resampled_frames};
+/// use superb::primitives::SampleRate;
+///
+/// assert_eq!(
+///     resampled_frames(48_000, SampleRate::HZ_48K, SampleRate::CD),
+///     44_100
+/// );
+/// assert_eq!(
+///     resampled_frames(1_000, SampleRate::HZ_48K, SampleRate::CD),
+///     919
+/// );
+/// assert_eq!(resampled_frames(7, SampleRate::CD, SampleRate::CD), 7);
+/// let mut src = PlanarBuffer::new(2, 4);
+/// src.channel_mut(0).copy_from_slice(&[0.0, 0.5, -0.5, 1.0]);
+/// src.channel_mut(1).copy_from_slice(&[0.25, -0.25, 0.125, 0.0]);
+/// let out = resample(&src, SampleRate::CD, SampleRate::CD)?;
+/// assert_eq!(out.channel(0), src.channel(0));
+/// assert_eq!(out.channel(1), src.channel(1));
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 pub fn resampled_frames(frames: usize, from: SampleRate, to: SampleRate) -> usize {
     if from == to {
         return frames;

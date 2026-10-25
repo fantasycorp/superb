@@ -110,6 +110,37 @@ pub struct SendInfo {
 /// the audio thread and require [`BlockProcessor::prepare`] afterwards.
 /// Parameter changes go through the shared [`StripParams`] /
 /// [`SendParams`] handles and need no re-prepare.
+///
+/// ```
+/// use superb::primitives::graph::nodes::ConstantNode;
+/// use superb::primitives::graph::{BlockProcessor, BlockTime};
+/// use superb::primitives::midi::MidiEventBuffer;
+/// use superb::primitives::mixer::{Mixer, PanLaw};
+/// use superb::primitives::SampleRate;
+///
+/// let mut mixer = Mixer::new(2);
+/// assert_eq!(mixer.channels(), 2);
+/// let a = mixer.add_track("a");
+/// let b = mixer.add_track("b");
+/// mixer.track_params(a)?.set_pan_law(PanLaw::Balance);
+/// mixer.track_params(b)?.set_pan_law(PanLaw::Balance);
+/// let src_a = mixer
+///     .graph_mut()
+///     .add_node(Box::new(ConstantNode::new(0.25, 2)));
+/// let src_b = mixer
+///     .graph_mut()
+///     .add_node(Box::new(ConstantNode::new(0.5, 2)));
+/// mixer.connect_source(src_a, a)?;
+/// mixer.connect_source(src_b, b)?;
+/// mixer.prepare(SampleRate::HZ_48K, 16)?;
+/// let midi = MidiEventBuffer::with_capacity(0);
+/// for _ in 0..2 {
+///     mixer.process(BlockTime::free_running(), 16, &midi, None)?;
+/// }
+/// assert_eq!(mixer.output().channel(0)[15], 0.75);
+/// assert_eq!(mixer.output().channel(1)[15], 0.75);
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 pub struct Mixer {
     graph: AudioGraph,
     ids: IdGenerator,

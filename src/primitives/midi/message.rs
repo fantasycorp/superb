@@ -19,6 +19,35 @@ const MAX_14BIT: u16 = 16_383;
 /// are **not** supported — see the crate docs for why, and
 /// [`MidiMessage::from_bytes`] for the exact error returned.
 ///
+/// Note numbers run `0..=127` in equal temperament, from 8.1757989156 Hz
+/// to 12543.8539514 Hz. Note 69 is 440 Hz. A note-on with velocity 0 is
+/// stored as a note-off:
+///
+/// ```
+/// use superb::primitives::midi::{MidiChannel, MidiMessage};
+///
+/// let channel = MidiChannel::new(0).unwrap();
+/// let released = MidiMessage::from_bytes(&[0x90, 60, 0]).unwrap();
+/// assert_eq!(
+///     released,
+///     MidiMessage::NoteOff {
+///         channel,
+///         note: 60,
+///         velocity: 0
+///     }
+/// );
+/// assert_eq!(MidiMessage::note_on(channel, 60, 0).unwrap(), released);
+/// let played = MidiMessage::from_bytes(&[0x91, 60, 1]).unwrap();
+/// assert_eq!(
+///     played,
+///     MidiMessage::NoteOn {
+///         channel: MidiChannel::new(1).unwrap(),
+///         note: 60,
+///         velocity: 1
+///     }
+/// );
+/// ```
+///
 /// The type is `Copy` and contains no heap data, so it is safe to move
 /// through an [`spsc`](crate::primitives::realtime::spsc) queue or store in a [`crate::primitives::midi::MidiEventBuffer`]
 /// on the audio thread.

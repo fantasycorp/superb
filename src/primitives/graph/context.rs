@@ -6,6 +6,70 @@ use crate::primitives::transport::{Segment, Transport};
 use crate::primitives::{BeatPosition, SampleRate, TimePosition, TimeSignature};
 
 /// Timeline information for one contiguous block (or transport segment).
+///
+/// ```
+/// use superb::primitives::graph::{BlockTime, ProcessContext};
+/// use superb::primitives::midi::MidiEventBuffer;
+/// use superb::primitives::transport::{LoopRange, Transport};
+/// use superb::primitives::{BeatPosition, SampleRate, TimePosition};
+///
+/// let free = BlockTime::free_running();
+/// assert_eq!(free.bpm, 120.0);
+/// assert!(!free.rolling);
+/// assert_eq!(BlockTime::default(), free);
+/// assert_eq!(
+///     BlockTime::stopped_at(TimePosition::from_samples(7), 90.0).bpm,
+///     90.0
+/// );
+///
+/// let next = BlockTime {
+///     bpm: 120.0,
+///     rolling: true,
+///     ..BlockTime::free_running()
+/// }
+/// .advanced_by(24_000, SampleRate::HZ_48K);
+/// assert_eq!(next.start.samples(), 24_000);
+/// assert!((next.beat_start.beats() - 1.0).abs() < 1e-9);
+/// assert!(next.rolling);
+///
+/// let midi = MidiEventBuffer::with_capacity(0);
+/// let ctx = ProcessContext {
+///     sample_rate: SampleRate::HZ_48K,
+///     frames: 64,
+///     time: free,
+///     midi: &midi,
+///     input_is_silent: true,
+///     input: None,
+/// };
+/// assert_eq!(ctx.sample_period(), 1.0 / 48_000.0);
+///
+/// let mut transport = Transport::new(SampleRate::HZ_48K, 120.0);
+/// transport
+///     .tempo_map_mut()
+///     .add_tempo(BeatPosition::new(2.0), 60.0)?;
+/// transport.set_loop(Some(
+///     LoopRange::new(
+///         TimePosition::from_samples(0),
+///         TimePosition::from_samples(60_000),
+///     )
+///     .unwrap(),
+/// ));
+/// transport.set_loop_enabled(true);
+/// transport.seek(TimePosition::from_samples(59_000));
+/// transport.play();
+/// let segs: Vec<_> = transport.advance(2_000).collect();
+/// let first = BlockTime::from_transport(&transport, &segs[0]);
+/// assert_eq!(first.start.samples(), 59_000);
+/// assert!(first.rolling);
+/// assert!(!first.wrapped);
+/// assert_eq!(first.bpm, 60.0);
+/// let second = BlockTime::from_transport(&transport, &segs[1]);
+/// assert!(second.wrapped);
+/// assert_eq!(second.start.samples(), 0);
+/// assert_eq!(second.bpm, 120.0);
+/// assert_eq!(second.beat_start, BeatPosition::ZERO);
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockTime {
     /// Timeline position of the block's first frame.

@@ -30,6 +30,32 @@ impl From<&PluginDescriptor> for PluginRef {
 
 /// One effect in a track's insert chain.
 ///
+/// ```
+/// use superb::primitives::plugins::{PluginDescriptor, PluginFormat};
+/// use superb::primitives::session::{Insert, PluginRef};
+/// use superb::primitives::InsertId;
+///
+/// let mut descriptor = PluginDescriptor::new(PluginFormat::Clap, "com.example.verb", "Verb");
+/// descriptor.path = "/plugins/verb.clap".into();
+/// let plugin = PluginRef::from(&descriptor);
+/// assert_eq!(plugin.id, "com.example.verb");
+/// let mut insert = Insert::new(plugin.clone());
+/// assert_eq!(insert.id(), InsertId::INVALID);
+/// assert_eq!(insert.param(7), None);
+/// insert.set_param(7, 0.5);
+/// insert.set_param(7, 0.25);
+/// insert.set_param(9, 1.0);
+/// assert_eq!(insert.param(7), Some(0.25));
+/// assert_eq!(insert.state.params.len(), 2);
+/// assert!(insert.clear_param(7));
+/// assert!(!insert.clear_param(7));
+/// assert_eq!(insert.param(9), Some(1.0));
+/// let placed = Insert::with_id(InsertId::from_raw(3), plugin);
+/// assert_eq!(placed.id(), InsertId::from_raw(3));
+/// assert!(!placed.state.bypass);
+/// assert!(placed.preset.is_empty());
+/// ```
+///
 /// The memory stores what is needed to recreate the effect: which plugin,
 /// its state (bypass and the parameter values the user has set), and the
 /// plugin's own saved preset. Nothing in the crate turns this into a

@@ -97,6 +97,37 @@ impl Fft {
 mod tests {
     use super::*;
 
+    /// Three cycles of a cosine across 64 points land in bins 3 and 61,
+    /// at half the window length, and the inverse brings the cosine back.
+    #[test]
+    fn example() {
+        let n = 64;
+        let fft = Fft::new(n);
+        assert_eq!(fft.len(), n);
+        let mut re: Vec<f64> = (0..n)
+            .map(|i| (2.0 * core::f64::consts::PI * 3.0 * i as f64 / n as f64).cos())
+            .collect();
+        let original = re.clone();
+        let mut im = vec![0.0; n];
+        fft.forward(&mut re, &mut im);
+        for k in 0..n {
+            let magnitude = (re[k] * re[k] + im[k] * im[k]).sqrt();
+            if k == 3 || k == n - 3 {
+                assert!(
+                    (magnitude - n as f64 / 2.0).abs() < 1e-9,
+                    "bin {k}: {magnitude}"
+                );
+            } else {
+                assert!(magnitude < 1e-9, "bin {k}: {magnitude}");
+            }
+        }
+        fft.inverse(&mut re, &mut im);
+        for (a, b) in re.iter().zip(&original) {
+            assert!((a - b).abs() < 1e-12);
+        }
+        assert!(im.iter().all(|v| v.abs() < 1e-12));
+    }
+
     #[test]
     fn a_tone_lands_in_one_bin_and_comes_back() {
         let n = 64;

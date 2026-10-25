@@ -25,7 +25,9 @@
 //! ```
 //! use superb::primitives::midi::{MidiChannel, MidiEvent, MidiEventBuffer, MidiMessage};
 //!
-//! // Decode a Note On from raw bytes.
+//! // Decode a Note On from raw bytes. Note numbers `0..=127` are equal
+//! // temperament: note 0 is 8.1757989156 Hz, note 69 is 440 Hz, and note
+//! // 127 is 12543.8539514 Hz.
 //! let channel = MidiChannel::new(0).unwrap();
 //! let note_on = MidiMessage::from_bytes(&[0x90, 60, 100]).unwrap();
 //! assert_eq!(note_on, MidiMessage::NoteOn { channel, note: 60, velocity: 100 });

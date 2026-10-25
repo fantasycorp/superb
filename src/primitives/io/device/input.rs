@@ -363,6 +363,31 @@ mod tests {
     use crate::primitives::io::capture::capture_queue;
     use std::sync::Mutex;
 
+    /// A zero channel count is rejected before any device is opened, and
+    /// the same planar layout the callback would push round-trips a queue.
+    #[test]
+    fn example() {
+        let bad = InputConfig {
+            channels: 0,
+            ..InputConfig::default()
+        };
+        assert!(InputStream::open(&bad, |_| {}).is_err());
+        let (mut tx, mut rx) = capture_queue(2, 8, 2).unwrap();
+        let mut planar = PlanarBuffer::new(2, 8);
+        let _ = planar.set_frames(4);
+        for i in 0..4 {
+            planar.channel_mut(0)[i] = i as f32;
+            planar.channel_mut(1)[i] = (i + 10) as f32;
+        }
+        assert!(tx.push(&planar, 1_000));
+        let block = rx.pop().expect("filled");
+        assert_eq!(block.block_start_us(), 1_000);
+        assert_eq!(block.buffer().channel(0), &[0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(block.buffer().channel(1), &[10.0, 11.0, 12.0, 13.0]);
+        rx.recycle(block);
+        assert_eq!(tx.dropped(), 0);
+    }
+
     #[test]
     fn enumeration_does_not_panic_without_hardware() {
         let _ = input_devices();

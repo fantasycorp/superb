@@ -6,6 +6,23 @@
 //! [`session::steps::render_blocks`](crate::session::steps::render_blocks) or [`export`](crate::export).
 //!
 //! Made of `superb::primitives::io::device` and `superb::primitives::midi::input`.
+//!
+//! Opening a device needs the `devices` feature and a machine that has one,
+//! so this example is not run with the default features. Closing an output
+//! that was never opened fails, and the session keeps its audio thread:
+//!
+//! ```ignore
+//! use superb::primitives::SampleRate;
+//! use superb::{devices, session};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-devices-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::CD, 128)?;
+//! let _ = devices::outputs()?;
+//! let _ = devices::inputs()?;
+//! assert!(devices::close_output(&mut session).is_err());
+//! assert!(session.audio_thread.is_some());
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 #[cfg(feature = "devices")]
 use crate::primitives::buffers::PlanarBuffer;

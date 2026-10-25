@@ -15,7 +15,7 @@
 //! real-time callback needs.
 //!
 //! ```
-//! use superb::primitives::buffers::{PlanarBuffer, InterleavedBuffer, interleave};
+//! use superb::primitives::buffers::{deinterleave, interleave, InterleavedBuffer, PlanarBuffer};
 //!
 //! let mut block = PlanarBuffer::new(2, 4);
 //! block.channel_mut(0).copy_from_slice(&[1.0, 2.0, 3.0, 4.0]);
@@ -24,6 +24,11 @@
 //! let mut out = InterleavedBuffer::new(2, 4);
 //! interleave(&block, &mut out);
 //! assert_eq!(out.samples(), &[1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0]);
+//!
+//! let mut back = PlanarBuffer::new(2, 4);
+//! deinterleave(&out, &mut back);
+//! assert_eq!(back.channel(0), &[1.0, 2.0, 3.0, 4.0]);
+//! assert_eq!(back.channel(1), &[-1.0, -2.0, -3.0, -4.0]);
 //!
 //! block.apply_gain(0.5);
 //! assert_eq!(block.channel(0)[3], 2.0);

@@ -8,6 +8,39 @@
 //! call it for you. [`render_blocks`] runs the engine when no sound card is
 //! attached. The two pieces are public so a program can assemble its own:
 //! [`build_mixer`] and [`publish`].
+//!
+//! ```
+//! use superb::primitives::buffers::PlanarBuffer;
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::session::commands;
+//! use superb::primitives::{SampleRate, TimePosition};
+//! use superb::{session, track, transport};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-steps-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+//! let mut tone = PlanarBuffer::new(2, 400);
+//! tone.fill(0.5);
+//! session.audio.insert("tone.wav", tone);
+//! superb::clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! transport::start(&mut session)?;
+//! let before = session::steps::render_blocks(&mut session, 2)?;
+//! assert!(before.peak() > 0.3);
+//! session
+//!     .history
+//!     .push(&mut session.memory, commands::set_track_mute(vox, true))?;
+//! transport::rewind(&mut session)?;
+//! session::steps::rebuild(&mut session)?;
+//! let after = session::steps::render_blocks(&mut session, 3)?;
+//! assert!(after.channel(0)[150..].iter().all(|&s| s.abs() < 1e-6));
+//! track::archive(&mut session, vox)?;
+//! transport::rewind(&mut session)?;
+//! let gone = session::steps::render_blocks(&mut session, 2)?;
+//! assert!(gone.is_silent());
+//! assert!(session.mixer.strip(vox).is_none());
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

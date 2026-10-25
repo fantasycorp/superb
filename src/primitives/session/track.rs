@@ -89,6 +89,58 @@ impl From<Vec<MidiNote>> for ClipSource {
 }
 
 /// A clip on a track: a placed region of some [`ClipSource`].
+///
+/// ```
+/// use superb::primitives::session::{Clip, ClipSource, Track, TrackKind, TrackSend};
+/// use superb::primitives::{ClipId, SendId, TimeDuration, TimePosition, TrackId};
+///
+/// let clip = Clip::new(
+///     "i",
+///     TimePosition::from_samples(100),
+///     TimeDuration::from_samples(50),
+///     ClipSource::Empty,
+/// )?;
+/// assert_eq!(clip.id(), ClipId::INVALID);
+/// assert_eq!(clip.length().samples(), 50);
+/// assert_eq!(clip.end().samples(), 150);
+/// assert!(clip.contains(TimePosition::from_samples(100)));
+/// assert!(clip.contains(TimePosition::from_samples(149)));
+/// assert!(!clip.contains(TimePosition::from_samples(150)));
+/// let later = Clip::new(
+///     "j",
+///     TimePosition::from_samples(149),
+///     TimeDuration::from_samples(10),
+///     ClipSource::Empty,
+/// )?;
+/// assert!(clip.overlaps(&later));
+/// assert!(Clip::new(
+///     "x",
+///     TimePosition::ZERO,
+///     TimeDuration::ZERO,
+///     ClipSource::Empty
+/// )
+/// .is_err());
+///
+/// let track = Track::new("lead", TrackKind::Midi);
+/// assert_eq!(track.id(), TrackId::INVALID);
+/// assert_eq!(track.kind, TrackKind::Midi);
+/// assert_eq!(track.state.volume_db, 0.0);
+/// assert_eq!(track.output(), None);
+/// assert!(track.sends().is_empty());
+/// assert_eq!(track.end(), TimePosition::ZERO);
+///
+/// let bus = TrackId::from_raw(7);
+/// let send = TrackSend::with_id(SendId::from_raw(3), bus)
+///     .level_db(-6.0)
+///     .pre_fader();
+/// assert_eq!(send.id(), SendId::from_raw(3));
+/// assert_eq!(send.bus(), bus);
+/// assert_eq!(
+///     (send.state.level_db, send.pre_fader, send.state.enabled),
+///     (-6.0, true, true)
+/// );
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct Clip {
     pub(crate) id: ClipId,

@@ -10,6 +10,33 @@
 //! Made of `superb::primitives::session::MetronomeState` and its command
 //! (the memory side) and `superb::primitives::graph::nodes::ClickParams`
 //! (the live side).
+//!
+//! ```
+//! use superb::primitives::SampleRate;
+//! use superb::{metronome, session, transport};
+//!
+//! let folder = std::env::temp_dir().join(format!(
+//!     "superb-metronome-example-{}",
+//!     std::process::id()
+//! ));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! // 600 bpm puts the next beat well after the first tick has died away.
+//! session::set_tempo(&mut session, 600.0)?;
+//! let steps = session.history.undo_len();
+//! metronome::enable(&mut session, true)?;
+//! assert!(session.memory.metronome().enabled);
+//! assert_eq!(session.history.undo_len(), steps);
+//! metronome::level(&mut session, -6.0206)?;
+//! assert_eq!(session.history.undo_len(), steps + 1);
+//! metronome::count_in(&mut session, 2)?;
+//! assert_eq!(session.memory.metronome().count_in, 2);
+//! assert!(session::steps::render_blocks(&mut session, 1)?.is_silent());
+//! transport::start(&mut session)?;
+//! let first = session::steps::render_blocks(&mut session, 1)?;
+//! assert!(first.peak() > 0.3 && first.peak() < 0.6, "{}", first.peak());
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::buffers::gain::db_to_linear;
 use crate::primitives::session::commands;

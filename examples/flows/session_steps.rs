@@ -49,8 +49,12 @@ fn main() -> Result<()> {
         )?,
     )?;
 
-    // keys, a MIDI track at -3 dB. One A4 (note 69, velocity 100) at beat 0
-    // for half a beat. At 120 bpm that is 0.25 s, samples 0..12_000.
+    // keys, a MIDI track at -3 dB. One A4: MIDI note 69, which
+    // `MonoSynthNode::note_to_hz` turns into 440 Hz. Note numbers run
+    // `0..=127`, from 8.1757989156 Hz (note 0) to 12543.8539514 Hz (note
+    // 127); twelve notes is an octave. Velocity 100, starting at beat 0,
+    // held for half a beat. At 120 bpm that is 0.25 s, samples 0..12_000.
+    // At 48 kHz one cycle of 440 Hz is 48000/440 samples (about 109.09).
     // The clip is a full second; the note ends at its own length.
     let keys = memory.add_track("keys", TrackKind::Midi);
     memory.track_mut(keys)?.state.volume_db = -3.0;
@@ -124,6 +128,12 @@ fn main() -> Result<()> {
     // (−3 dB), the track's constant-power pan (−3 dB at centre), and the
     // room bus (−6 dB; a bus uses the balance law, unity at centre).
     let centre = PanLaw::ConstantPower.gains(0.0).0;
+    let pitch = MonoSynthNode::note_to_hz(69);
+    assert!((pitch - 440.0).abs() < 1e-9);
+    assert!((MonoSynthNode::note_to_hz(0) - 8.1757989156).abs() < 1e-6);
+    assert!((MonoSynthNode::note_to_hz(127) - 12543.8539514).abs() < 1e-4);
+    // One cycle of that A4, in samples, at this session's rate.
+    assert!((rate.hz() as f64 / pitch - 48_000.0 / 440.0).abs() < 1e-9);
     let note = (100.0 / 127.0) * db_to_linear(-3.0) * centre * db_to_linear(-6.0);
     let note_peak = audio.channel(0)[..12_000]
         .iter()

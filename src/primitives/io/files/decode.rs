@@ -245,3 +245,33 @@ fn bits_of_codec(id: symphonia::core::codecs::audio::AudioCodecId) -> Option<u32
     };
     Some(bits)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::decode_vec;
+    use crate::primitives::buffers::PlanarBuffer;
+    use crate::primitives::io::wav::{write_to, WavFormat};
+    use crate::primitives::SampleRate;
+
+    /// A float32 WAV written by the crate's own writer comes back with the
+    /// same rate, channel count, frame count and samples.
+    #[test]
+    fn example() {
+        let mut audio = PlanarBuffer::new(2, 5);
+        audio
+            .channel_mut(0)
+            .copy_from_slice(&[0.0, 0.5, -0.5, 1.0, -1.0]);
+        audio
+            .channel_mut(1)
+            .copy_from_slice(&[0.25, -0.25, 0.125, 0.0, 0.75]);
+        let mut bytes = Vec::new();
+        write_to(&mut bytes, &audio, SampleRate::CD, WavFormat::Float32).unwrap();
+        let file = decode_vec(bytes, Some("wav")).unwrap();
+        assert_eq!(file.sample_rate, SampleRate::CD);
+        assert_eq!(file.channels(), 2);
+        assert_eq!(file.frames(), 5);
+        assert_eq!(file.bits_per_sample, Some(32));
+        assert_eq!(file.buffer.channel(0), audio.channel(0));
+        assert_eq!(file.buffer.channel(1), audio.channel(1));
+    }
+}

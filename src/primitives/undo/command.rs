@@ -116,6 +116,43 @@ type Setter<T, V> = Arc<dyn Fn(&mut T, V) -> Result<()> + Send + Sync>;
 /// restores the previous value. Consecutive edits with the same
 /// [`CoalesceKey`] merge by keeping the first edit's previous value and the
 /// latest edit's new value, so a whole fader drag is one undo step.
+///
+/// ```
+/// use superb::primitives::undo::{CoalesceKey, Command, PropertyEdit};
+///
+/// struct Doc {
+///     n: i32,
+/// }
+///
+/// let key = CoalesceKey::new(7, 42);
+/// let edit = |value: i32| {
+///     PropertyEdit::new(
+///         "set",
+///         Some(key),
+///         value,
+///         |doc: &Doc| doc.n,
+///         |doc: &mut Doc, value| {
+///             doc.n = value;
+///             Ok(())
+///         },
+///     )
+/// };
+/// let mut doc = Doc { n: 10 };
+/// let mut first = edit(20);
+/// assert!(first.previous().is_none());
+/// first.apply(&mut doc).unwrap();
+/// assert_eq!(doc.n, 20);
+/// assert_eq!(first.previous(), Some(&10));
+/// assert_eq!(*first.value(), 20);
+/// let mut second = edit(30);
+/// second.apply(&mut doc).unwrap();
+/// first.merge(Box::new(second)).unwrap();
+/// assert_eq!(*first.value(), 30);
+/// first.revert(&mut doc).unwrap();
+/// assert_eq!(doc.n, 10);
+/// first.apply(&mut doc).unwrap();
+/// assert_eq!(doc.n, 30);
+/// ```
 pub struct PropertyEdit<T, V> {
     label: String,
     key: Option<CoalesceKey>,

@@ -1,12 +1,6 @@
-//! `export`: bounce the session to a WAV file.
+//! `export`: the whole session as 16-bit PCM, then the overlap as float.
 //!
-//! What you'll learn:
-//! - A bounce renders offline through its own copy of the mixer, without
-//!   touching the live engine
-//! - `Bounce::default()` covers the session from zero to the end of the
-//!   last clip, at the session's rate, as 16-bit PCM; set `start`,
-//!   `length`, `format` for a range or another file format
-//! - With feature `files`, `sample_rate` converts the bounce on the way out
+//! Each comment is the block under it.
 //!
 //! ```text
 //! cargo run --example export_session
@@ -30,7 +24,10 @@ fn main() -> Result<()> {
     let lead = track::add(&mut session, "lead", TrackKind::Audio)?;
     let pad = track::add(&mut session, "pad", TrackKind::Audio)?;
 
-    // Two one-second tones, the second starting at 0.5 s: the session ends at 1.5 s.
+    // One second (48_000 frames) each. lead is a 440 Hz sine at 0.3 from
+    // sample 0. pad is a 110 Hz sine at 0.2 from sample 24_000 (0.5 s).
+    // The session ends at sample 72_000 (1.5 s). pad's fader is −6 dB.
+    // lead's pan is 0.3, on the constant-power law a bounce builds with.
     let mut a = PlanarBuffer::new(2, rate.hz() as usize);
     let mut b = PlanarBuffer::new(2, rate.hz() as usize);
     for i in 0..a.frames() {
@@ -53,11 +50,30 @@ fn main() -> Result<()> {
     )?;
     track::volume(&mut session, pad, -6.0)?;
     track::pan(&mut session, lead, 0.3)?;
+    assert_eq!(
+        session.memory.track(lead)?.clips()[0].length().samples(),
+        48_000
+    );
+    assert_eq!(
+        session.memory.track(pad)?.clips()[0].start().samples(),
+        24_000
+    );
+    assert_eq!(
+        session.memory.track(pad)?.clips()[0].length().samples(),
+        48_000
+    );
+    assert!((session.memory.track(pad)?.state.volume_db + 6.0).abs() < 1e-6);
+    assert!((session.memory.track(lead)?.state.pan - 0.3).abs() < 1e-6);
 
-    // The whole session. The live engine is untouched: it stays stopped at zero.
+    // `Bounce::default` is 16-bit PCM from sample 0 to the end of the last
+    // clip: 72_000 frames, 1.50 s. The two sines meet from 0.5 s to 1.0 s
+    // and that overlap peaks at 0.321. The live playhead stays at sample 0.
     let dir = std::env::temp_dir();
     let path = dir.join("export_session.wav");
     let audio = export::bounce(&mut session, &path, Bounce::default())?;
+    assert_eq!(audio.frames(), 72_000);
+    assert!((audio.peak() - 0.321).abs() < 1e-3);
+    assert_eq!(transport::playhead(&session).samples(), 0);
     println!(
         "bounced {:.2} s ({} frames) to {}; peak {:.3}",
         audio.frames() as f64 / rate.hz() as f64,
@@ -70,8 +86,11 @@ fn main() -> Result<()> {
         transport::playhead(&session).to_seconds(rate)
     );
 
-    // Read it back to prove the file is what we rendered.
+    // The file reads back as the same 72_000 frames, 48_000 Hz, 2 channels.
     let (read, read_rate) = wav::read(&path)?;
+    assert_eq!(read.frames(), 72_000);
+    assert_eq!(read_rate.hz(), 48_000);
+    assert_eq!(read.channels(), 2);
     println!(
         "read back: {} frames @ {} Hz, {} channels",
         read.frames(),
@@ -79,7 +98,8 @@ fn main() -> Result<()> {
         read.channels()
     );
 
-    // Just the overlap (0.5 s .. 1.0 s), as 32-bit float.
+    // 0.5 s .. 1.0 s is 24_000 frames, written as 32-bit float. The peak
+    // is the same 0.321: that is where the whole bounce peaks.
     let overlap = export::bounce(
         &mut session,
         dir.join("export_overlap.wav"),
@@ -90,8 +110,12 @@ fn main() -> Result<()> {
             ..Bounce::default()
         },
     )?;
+    assert_eq!(overlap.frames(), 24_000);
+    assert!((overlap.peak() - 0.321).abs() < 1e-3);
     println!("0.5 s .. 1.0 s as float: peak {:.3}", overlap.peak());
 
+    // With `files`, the same 72_000 frames at 48 kHz become
+    // `ceil(72_000 × 44_100 / 48_000)` = 66_150 frames at 44.1 kHz.
     #[cfg(feature = "files")]
     {
         let cd = dir.join("export_session_44k1.wav");
@@ -103,6 +127,7 @@ fn main() -> Result<()> {
                 ..Bounce::default()
             },
         )?;
+        assert_eq!(converted.frames(), 66_150);
         println!(
             "resampled to 44.1 kHz: {} frames -> {}",
             converted.frames(),

@@ -8,6 +8,24 @@
 //! are monotonically increasing counters (wrapping on overflow); the slot
 //! index is `counter % capacity`. This avoids the "one wasted slot" of the
 //! classic design and makes `len()` a simple subtraction.
+//!
+//! ```
+//! use superb::primitives::realtime::spsc::channel;
+//!
+//! let (mut tx, mut rx) = channel::<u32>(3);
+//! assert_eq!(tx.capacity(), 3);
+//! tx.push(1).unwrap();
+//! tx.push(2).unwrap();
+//! tx.push(3).unwrap();
+//! assert!(tx.is_full());
+//! assert_eq!(tx.push(4), Err(4));
+//! assert_eq!(rx.pop(), Some(1));
+//! assert_eq!(rx.pop(), Some(2));
+//! tx.push(5).unwrap();
+//! assert_eq!(rx.pop(), Some(3));
+//! assert_eq!(rx.pop(), Some(5));
+//! assert_eq!(rx.pop(), None);
+//! ```
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;

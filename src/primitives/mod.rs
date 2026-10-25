@@ -13,7 +13,7 @@
 //! * [`SuperbError`] — the shared error enum.
 //!
 //! ```
-//! use superb::primitives::{SampleRate, TimePosition, BeatPosition};
+//! use superb::primitives::{BeatPosition, IdGenerator, SampleRate, TimePosition, TrackId};
 //!
 //! let rate = SampleRate::new(48_000).unwrap();
 //! let half_second = TimePosition::from_seconds(0.5, rate);
@@ -24,6 +24,14 @@
 //! // `primitives::transport` converts between the two domains.
 //! let two_bars_of_4_4 = BeatPosition::new(8.0);
 //! assert_eq!(two_bars_of_4_4.beats(), 8.0);
+//!
+//! // IDs from one generator are monotonic and never the reserved zero.
+//! let ids = IdGenerator::new();
+//! let first: TrackId = ids.next();
+//! let second: TrackId = ids.next();
+//! assert!(first.is_valid());
+//! assert_eq!(second.raw(), first.raw() + 1);
+//! assert!(!TrackId::INVALID.is_valid());
 //! ```
 
 mod error;

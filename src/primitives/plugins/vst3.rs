@@ -5,6 +5,15 @@
 //! has been done here. Every entry point returns [`unsupported`] and
 //! [`AVAILABLE`] is `false`, so an application can show an honest message
 //! instead of an empty plugin list.
+//!
+//! ```
+//! use superb::primitives::plugins::vst3::{load, unsupported, AVAILABLE};
+//!
+//! assert!(!AVAILABLE);
+//! let err = load("/nonexistent/plugin.vst3").err().unwrap();
+//! assert_eq!(err, unsupported());
+//! assert!(err.to_string().contains("VST3"));
+//! ```
 
 use std::path::Path;
 

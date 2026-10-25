@@ -18,6 +18,127 @@ use crate::primitives::plugins::{ParamChange, PluginInstance};
 /// instance and then renders. Take the queue's sending half with
 /// [`take_param_sender`](PluginNode::take_param_sender) before handing the
 /// node to the graph.
+///
+/// ```
+/// use superb::primitives::buffers::PlanarBuffer;
+/// use superb::primitives::graph::{BlockTime, Node, ProcessContext, ProcessStatus};
+/// use superb::primitives::midi::MidiEventBuffer;
+/// use superb::primitives::plugins::{
+///     AudioPortLayout, ParamChange, ParamInfo, PluginDescriptor, PluginFormat, PluginInstance,
+///     PluginNode,
+/// };
+/// use superb::primitives::{Result, SampleRate};
+///
+/// struct Gain {
+///     gain: f64,
+///     active: bool,
+///     desc: PluginDescriptor,
+///     params: Vec<ParamInfo>,
+/// }
+/// impl PluginInstance for Gain {
+///     fn descriptor(&self) -> &PluginDescriptor {
+///         &self.desc
+///     }
+///     fn ports(&self) -> AudioPortLayout {
+///         AudioPortLayout {
+///             inputs: 1,
+///             outputs: 1,
+///         }
+///     }
+///     fn params(&self) -> &[ParamInfo] {
+///         &self.params
+///     }
+///     fn param_value(&self, id: u32) -> Result<f64> {
+///         if id == 1 {
+///             Ok(self.gain)
+///         } else {
+///             Err(superb::primitives::SuperbError::NotFound {
+///                 kind: "param",
+///                 id: id as u64,
+///             })
+///         }
+///     }
+///     fn set_param(&mut self, id: u32, value: f64) -> Result<()> {
+///         if id == 1 {
+///             self.gain = value;
+///             Ok(())
+///         } else {
+///             Err(superb::primitives::SuperbError::NotFound {
+///                 kind: "param",
+///                 id: id as u64,
+///             })
+///         }
+///     }
+///     fn activate(&mut self, _: SampleRate, _: usize) -> Result<()> {
+///         self.active = true;
+///         Ok(())
+///     }
+///     fn deactivate(&mut self) {
+///         self.active = false;
+///     }
+///     fn is_active(&self) -> bool {
+///         self.active
+///     }
+///     fn reset(&mut self) {}
+///     fn process(
+///         &mut self,
+///         _: &ProcessContext<'_>,
+///         input: &PlanarBuffer,
+///         output: &mut PlanarBuffer,
+///     ) -> ProcessStatus {
+///         output.copy_from(input).unwrap();
+///         output.apply_gain(self.gain as f32);
+///         ProcessStatus::Normal
+///     }
+///     fn latency_frames(&self) -> usize {
+///         0
+///     }
+///     fn save_state(&mut self) -> Result<Vec<u8>> {
+///         Ok(Vec::new())
+///     }
+///     fn load_state(&mut self, _: &[u8]) -> Result<()> {
+///         Ok(())
+///     }
+/// }
+///
+/// let instance = Gain {
+///     gain: 1.0,
+///     active: false,
+///     desc: PluginDescriptor::new(PluginFormat::Clap, "superb.mock.gain", "Mock Gain"),
+///     params: vec![ParamInfo {
+///         id: 1,
+///         name: "Gain".into(),
+///         module: String::new(),
+///         min: 0.0,
+///         max: 2.0,
+///         default: 1.0,
+///         automatable: true,
+///         stepped: false,
+///         hidden: false,
+///         readonly: false,
+///         bypass: false,
+///     }],
+/// };
+/// let mut node = PluginNode::new(Box::new(instance));
+/// assert_eq!(node.name(), "Mock Gain");
+/// let mut params = node.take_param_sender().unwrap();
+/// node.prepare(SampleRate::HZ_48K, 8);
+/// let midi = MidiEventBuffer::with_capacity(0);
+/// let ctx = ProcessContext {
+///     sample_rate: SampleRate::HZ_48K,
+///     frames: 8,
+///     time: BlockTime::free_running(),
+///     midi: &midi,
+///     input_is_silent: false,
+///     input: None,
+/// };
+/// let mut input = PlanarBuffer::new(1, 8);
+/// input.fill(1.0);
+/// let mut output = PlanarBuffer::new(1, 8);
+/// params.push(ParamChange { id: 1, value: 0.5 }).unwrap();
+/// assert_eq!(node.process(&ctx, &input, &mut output), ProcessStatus::Normal);
+/// assert_eq!(output.channel(0), &[0.5; 8]);
+/// ```
 pub struct PluginNode {
     instance: Box<dyn PluginInstance>,
     name: String,

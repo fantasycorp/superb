@@ -77,6 +77,19 @@ impl EnvelopePoint {
 /// * before the first point → `default_value`
 /// * after the last point → last point's value (held)
 /// * between points → interpolate using the left point's [`CurveShape`]
+///
+/// ```
+/// use superb::primitives::automation::{Envelope, EnvelopePoint};
+/// use superb::primitives::TimePosition;
+///
+/// let mut envelope = Envelope::new(0.0);
+/// envelope.upsert(EnvelopePoint::linear(TimePosition::from_samples(0), 0.0));
+/// envelope.upsert(EnvelopePoint::linear(TimePosition::from_samples(100), 1.0));
+/// let mid = envelope.evaluate(TimePosition::from_samples(50));
+/// assert!((mid - 0.5).abs() < 1e-5);
+/// assert_eq!(envelope.evaluate(TimePosition::from_samples(100)), 1.0);
+/// assert_eq!(envelope.evaluate(TimePosition::from_samples(10_000)), 1.0);
+/// ```
 #[derive(Clone, Debug)]
 pub struct Envelope {
     points: Vec<EnvelopePoint>,

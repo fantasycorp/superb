@@ -10,6 +10,14 @@
 //! that ignores silence and quiet stretches when summing a whole
 //! programme. Every channel counts with weight one, right for mono and
 //! stereo; surround weights are not applied.
+//!
+//! ```
+//! use superb::primitives::analysis::meter::{peak, rms};
+//!
+//! assert_eq!(peak(&[]), 0.0);
+//! assert_eq!(rms(&[]), 0.0);
+//! assert_eq!(peak(&[0.1, -0.7, 0.3]), 0.7);
+//! ```
 
 use super::filter::Biquad;
 use crate::primitives::buffers::gain::{db_to_linear, linear_to_db};

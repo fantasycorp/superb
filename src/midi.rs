@@ -9,6 +9,29 @@
 //! Made of `superb::primitives::midi` (messages), the engine's MIDI queue
 //! in `superb::primitives::io` (`Engine::live`), and the live instrument
 //! [`session::steps::build_mixer`](crate::session::steps::build_mixer) adds.
+//!
+//! ```
+//! use superb::primitives::session::TrackKind;
+//! use superb::primitives::SampleRate;
+//! use superb::{midi, session, track, transport};
+//!
+//! let folder = std::env::temp_dir().join(format!("superb-midi-example-{}", std::process::id()));
+//! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
+//! let keys = track::add(&mut session, "keys", TrackKind::Midi)?;
+//! track::monitor(&mut session, keys, true)?;
+//! transport::start(&mut session)?;
+//! assert!(session::steps::render_blocks(&mut session, 2)?.is_silent());
+//! // Note 69 is A4, 440 Hz, in equal temperament (notes run `0..=127`,
+//! // from 8.1757989156 Hz to 12543.8539514 Hz).
+//! midi::play_note(&mut session, 0, 69, 100)?;
+//! let sounding = session::steps::render_blocks(&mut session, 4)?;
+//! assert!(sounding.peak() > 0.5, "peak {}", sounding.peak());
+//! midi::release_note(&mut session, 0, 69)?;
+//! let released = session::steps::render_blocks(&mut session, 4)?;
+//! assert!(released.channel(0)[128..].iter().all(|&s| s == 0.0));
+//! let _ = std::fs::remove_dir_all(&folder);
+//! # Ok::<(), superb::primitives::SuperbError>(())
+//! ```
 
 use crate::primitives::midi::{MidiChannel, MidiMessage, TimestampedMessage};
 use crate::primitives::Result;

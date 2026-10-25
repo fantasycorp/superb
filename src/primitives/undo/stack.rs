@@ -53,6 +53,38 @@ struct OpenGroup<T: 'static> {
 /// A failed `apply` in `push` records nothing. A failed `revert`/`apply`
 /// during undo/redo leaves the memory in an unknown state, so the whole
 /// history is cleared before the error is returned.
+///
+/// ```
+/// use superb::primitives::undo::{CoalesceKey, PropertyEdit, UndoStack};
+///
+/// struct Doc {
+///     n: i32,
+/// }
+///
+/// let set_n = |value: i32| {
+///     PropertyEdit::new(
+///         "Set n",
+///         Some(CoalesceKey::new(1, 0)),
+///         value,
+///         |doc: &Doc| doc.n,
+///         |doc: &mut Doc, value| {
+///             doc.n = value;
+///             Ok(())
+///         },
+///     )
+/// };
+/// let mut doc = Doc { n: 0 };
+/// let mut history = UndoStack::new();
+/// assert!(history.is_clean());
+/// history.push(&mut doc, set_n(1)).unwrap();
+/// history.push(&mut doc, set_n(2)).unwrap();
+/// history.push(&mut doc, set_n(3)).unwrap();
+/// assert_eq!(history.undo_len(), 1);
+/// assert_eq!(doc.n, 3);
+/// assert!(history.undo(&mut doc).unwrap());
+/// assert_eq!(doc.n, 0);
+/// assert!(history.is_clean());
+/// ```
 pub struct UndoStack<T: 'static> {
     undo: Vec<Entry<T>>,
     redo: Vec<Entry<T>>,

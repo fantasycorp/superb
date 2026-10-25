@@ -7,6 +7,16 @@ use crate::primitives::{Result, SuperbError};
 /// This is the layout most device APIs expose. The process graph uses
 /// [`PlanarBuffer`](crate::primitives::buffers::PlanarBuffer); convert at the device boundary with
 /// [`interleave`](crate::primitives::buffers::interleave) / [`deinterleave`](crate::primitives::buffers::deinterleave).
+///
+/// ```
+/// use superb::primitives::buffers::InterleavedBuffer;
+///
+/// let block = InterleavedBuffer::from_vec(2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+/// assert_eq!(block.frames(), 3);
+/// assert_eq!(block.frame(1), &[3.0, 4.0]);
+/// assert_eq!(block.sample(2, 1), 6.0);
+/// assert_eq!(block.frames_iter().count(), 3);
+/// ```
 #[derive(Clone, Debug)]
 pub struct InterleavedBuffer {
     data: Vec<f32>,

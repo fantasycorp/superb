@@ -21,6 +21,27 @@ use super::AudioFile;
 /// passed straight to [`export_wav`], [`AudioFile::resampled_to`] or a
 /// session. The engine is prepared here; `transport_mut().play()` first if
 /// the transport should move.
+///
+/// ```
+/// use superb::primitives::graph::nodes::ConstantNode;
+/// use superb::primitives::graph::AudioGraph;
+/// use superb::primitives::io::files::bounce;
+/// use superb::primitives::io::Engine;
+/// use superb::primitives::transport::Transport;
+/// use superb::primitives::SampleRate;
+///
+/// let mut graph = AudioGraph::new();
+/// let constant = graph.add_node(Box::new(ConstantNode::new(0.5, 2)));
+/// graph.set_output(constant)?;
+/// let mut engine = Engine::new(graph, Transport::new(SampleRate::HZ_48K, 120.0));
+/// let file = bounce(&mut engine, SampleRate::HZ_48K, 64, 1_000)?;
+/// assert_eq!(file.sample_rate, SampleRate::HZ_48K);
+/// assert_eq!(file.bits_per_sample, Some(32));
+/// assert_eq!(file.frames(), 1_000);
+/// assert_eq!(file.channels(), 2);
+/// assert!(file.buffer.channel(1).iter().all(|&sample| sample == 0.5));
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 pub fn bounce<P: BlockProcessor>(
     engine: &mut Engine<P>,
     sample_rate: SampleRate,

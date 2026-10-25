@@ -65,6 +65,50 @@ fn on() -> bool {
 }
 
 /// Everything a session keeps as state, in file form.
+///
+/// ```
+/// use superb::primitives::session::{Memory, TrackKind, STATE_FORMAT_VERSION};
+/// use superb::primitives::{SampleRate, TimePosition};
+///
+/// let mut memory = Memory::new("s", SampleRate::HZ_48K);
+/// let vox = memory.add_track("vox", TrackKind::Audio);
+/// memory.track_mut(vox)?.state.mute = true;
+/// memory.track_mut(vox)?.state.arm = true;
+/// memory.set_looping(true);
+/// memory.metronome_mut().enabled = true;
+/// memory.metronome_mut().count_in = 2;
+/// memory.set_playhead(TimePosition::from_samples(4_800));
+/// let snap = memory.state_snapshot();
+/// assert_eq!(snap.format_version, STATE_FORMAT_VERSION);
+/// assert_eq!(snap.playhead, 4_800);
+/// assert!(snap.looping);
+/// assert!(snap.metronome);
+/// assert_eq!(snap.count_in, 2);
+/// assert!(snap
+///     .tracks
+///     .iter()
+///     .any(|track| track.id == vox.raw() && track.mute));
+/// let dir = std::env::temp_dir().join(format!("superb-state-doc-{}", std::process::id()));
+/// std::fs::create_dir_all(&dir).unwrap();
+/// let path = dir.join("state.json");
+/// memory.save_state(&path)?;
+/// let json = std::fs::read_to_string(&path).unwrap();
+/// assert!(!json.contains("volume") && !json.contains("\"name\""));
+/// let back = Memory::load_state(&path)?;
+/// assert_eq!(back, snap);
+/// std::fs::remove_dir_all(&dir).unwrap();
+/// let mut fresh = Memory::new("s", SampleRate::HZ_48K);
+/// let fresh_vox = fresh.add_track("vox", TrackKind::Audio);
+/// assert_eq!(fresh_vox, vox);
+/// fresh.apply_state(&back)?;
+/// assert!(fresh.track(vox)?.state.mute);
+/// assert!(fresh.track(vox)?.state.arm);
+/// assert!(fresh.looping());
+/// assert!(fresh.metronome().enabled);
+/// assert_eq!(fresh.metronome().count_in, 2);
+/// assert_eq!(fresh.playhead().samples(), 4_800);
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StateSnapshot {
     /// [`STATE_FORMAT_VERSION`] of the writer.

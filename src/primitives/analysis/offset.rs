@@ -4,6 +4,34 @@
 //! the host's reference, carry the same sound at a different time. The
 //! shift that lines them up is where their cross-correlation peaks, and
 //! how clearly it peaks says how much to trust it.
+//!
+//! ```
+//! use superb::primitives::analysis::offset::estimate;
+//!
+//! fn noise(len: usize, seed: u64) -> Vec<f32> {
+//!     let mut state = seed;
+//!     (0..len)
+//!         .map(|_| {
+//!             state = state
+//!                 .wrapping_mul(6_364_136_223_846_793_005)
+//!                 .wrapping_add(1_442_695_040_888_963_407);
+//!             ((state >> 40) as f32 / (1u64 << 24) as f32) * 2.0 - 1.0
+//!         })
+//!         .collect()
+//! }
+//!
+//! let reference = noise(20_000, 1);
+//! let hiss = noise(20_000, 2);
+//! let other: Vec<f32> = (0..20_000)
+//!     .map(|n| {
+//!         let late = if n >= 1_234 { reference[n - 1_234] } else { 0.0 };
+//!         0.5 * late + 0.1 * hiss[n] + 0.3
+//!     })
+//!     .collect();
+//! let found = estimate(&reference, &other, 5_000).unwrap();
+//! assert_eq!(found.shift, 1_234);
+//! assert!(found.confidence > 0.9, "{}", found.confidence);
+//! ```
 
 use super::fft::Fft;
 use crate::primitives::{Result, SuperbError};

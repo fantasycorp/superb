@@ -2,6 +2,25 @@
 //!
 //! These helpers are slice-based so a device or file layer can convert
 //! without allocating.
+//!
+//! ```
+//! use superb::primitives::buffers::convert::{f32_to_i16_saturating, from_f32, to_f32};
+//!
+//! let ints = [0i16, 16_384, -16_384, i16::MAX, i16::MIN];
+//! let mut floats = [0.0f32; 5];
+//! to_f32(&ints, &mut floats);
+//! assert_eq!(floats[0], 0.0);
+//! assert!((floats[1] - 0.5).abs() < 1e-4);
+//! assert!((floats[2] + 0.5).abs() < 1e-4);
+//! assert!(floats[3] > 0.99 && floats[3] <= 1.0);
+//! assert_eq!(floats[4], -1.0);
+//! assert_eq!(f32_to_i16_saturating(2.0), i16::MAX);
+//! assert_eq!(f32_to_i16_saturating(-2.0), i16::MIN);
+//! assert_eq!(f32_to_i16_saturating(0.0), 0);
+//! let mut back = [0i16; 1];
+//! from_f32(&[3.0], &mut back);
+//! assert_eq!(back[0], i16::MAX);
+//! ```
 
 use dasp_sample::{FromSample, Sample, ToSample};
 

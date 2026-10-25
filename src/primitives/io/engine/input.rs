@@ -7,6 +7,29 @@ use crate::primitives::{Result, SuperbError};
 
 /// Captured audio on its way into the engine.
 ///
+/// ```
+/// use superb::primitives::buffers::PlanarBuffer;
+/// use superb::primitives::io::capture::capture_queue;
+/// use superb::primitives::io::LiveInput;
+///
+/// let (mut mic, blocks) = capture_queue(2, 16, 8)?;
+/// let mut input = LiveInput::new(blocks, 2, 16)?;
+/// assert_eq!(input.channels(), 2);
+/// for value in [1.0, 2.0, 3.0] {
+///     let mut block = PlanarBuffer::new(2, 16);
+///     block.fill(value);
+///     assert!(mic.push(&block, 0));
+/// }
+/// input.pull();
+/// assert_eq!(input.buffered(), 48);
+/// assert!(input.read_block(16).channel(0).iter().all(|&s| s == 1.0));
+/// assert!(input.read_block(16).channel(1).iter().all(|&s| s == 2.0));
+/// assert!(input.read_block(8).channel(0).iter().all(|&s| s == 3.0));
+/// assert_eq!(input.overruns(), 0);
+/// assert_eq!(input.underruns(), 0);
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
+///
 /// The input side of a capture queue (a device callback, or anything else)
 /// pushes blocks; before every block the engine [`pull`](Self::pull)s them
 /// into a ring four blocks deep and [`read_block`](Self::read_block)s the

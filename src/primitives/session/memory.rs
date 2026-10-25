@@ -47,6 +47,31 @@ impl Default for MetronomeState {
 ///
 /// Every mutating method bumps [`revision`](Memory::revision), so views can
 /// cheaply detect "something changed".
+///
+/// ```
+/// use superb::primitives::session::Memory;
+/// use superb::primitives::transport::LoopRange;
+/// use superb::primitives::{BeatPosition, SampleRate, TimePosition};
+///
+/// let mut memory = Memory::new("memory", SampleRate::HZ_48K);
+/// assert_eq!(memory.name(), "memory");
+/// assert_eq!(memory.sample_rate(), SampleRate::HZ_48K);
+/// assert_eq!(memory.revision(), 0);
+/// assert!(memory.loop_range().is_none());
+/// memory.set_name("tune");
+/// assert_eq!(memory.revision(), 1);
+/// memory.set_sample_rate(SampleRate::CD);
+/// assert_eq!(memory.tempo_map().sample_rate(), SampleRate::CD);
+/// memory.tempo_map_mut().set_initial_tempo(90.0)?;
+/// assert_eq!(memory.tempo_map().tempo_at(BeatPosition::ZERO), 90.0);
+/// let range = LoopRange::new(TimePosition::ZERO, TimePosition::from_samples(10))?;
+/// memory.set_loop_range(Some(range));
+/// assert_eq!(memory.loop_range(), Some(range));
+/// assert_eq!(memory.revision(), 4);
+/// assert_eq!(memory.end_position(), TimePosition::ZERO);
+/// assert_eq!(memory.clip_count(), 0);
+/// # Ok::<(), superb::primitives::SuperbError>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct Memory {
     name: String,
