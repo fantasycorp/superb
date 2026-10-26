@@ -1,6 +1,15 @@
-//! `devices`: every output, every input, and with `midi-io` every MIDI port.
+//! `devices` lists the machine's audio and MIDI ports.
 //!
-//! Each comment is the block under it. The names are the machine's.
+//! ```text
+//! devices::outputs / inputs
+//! devices::midi_inputs   (midi-io)
+//! ```
+//!
+//! ```text
+//! for d in devices::outputs()? {
+//!     println!("{}{}", d.name, if d.is_default { " *" } else { "" });
+//! }
+//! ```
 //!
 //! ```text
 //! cargo run --example list_devices --features devices
@@ -10,7 +19,7 @@
 use superb::devices;
 use superb::primitives::Result;
 
-/// `0` is an unknown channel count. The listing prints "channels unknown".
+/// `0` prints "channels unknown".
 fn channels(max: usize) -> String {
     if max == 0 {
         "channels unknown".into()
@@ -20,16 +29,11 @@ fn channels(max: usize) -> String {
 }
 
 fn main() -> Result<()> {
-    // `0` prints "channels unknown". Any other count prints "N ch max".
-    // Output listings always carry 0: `output_devices` leaves
-    // `max_channels` at 0. An input listing carries 0 when it has no
-    // supported config to measure.
+    // Outputs always report max_channels 0. Inputs report the largest config.
     assert_eq!(channels(0), "channels unknown");
     assert_eq!(channels(2), "2 ch max");
 
-    // `devices::outputs` is the default host's outputs. `*` marks
-    // `is_default`, the device a later `None` selects. Every line says
-    // the channel count is unknown.
+    // Default host outputs. * is the default (what None selects).
     println!("outputs:");
     let outputs = devices::outputs()?;
     assert!(outputs.iter().all(|d| d.max_channels == 0));
@@ -41,8 +45,7 @@ fn main() -> Result<()> {
             channels(d.max_channels)
         );
     }
-    // `devices::inputs` is the default host's inputs, with `*` on the
-    // default. `max_channels` is the largest supported config.
+    // Default host inputs.
     println!("inputs:");
     for d in devices::inputs()? {
         println!(
@@ -53,8 +56,7 @@ fn main() -> Result<()> {
         );
     }
 
-    // `hardware` includes `midi-io`, which adds this list: each port's
-    // index and name from `devices::midi_inputs`. `devices` alone skips it.
+    // MIDI inputs (midi-io).
     #[cfg(feature = "midi-io")]
     {
         println!("MIDI inputs:");
