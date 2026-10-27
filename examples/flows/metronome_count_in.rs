@@ -1,6 +1,15 @@
 //! `metronome`: four clicks at −6 dB, then a one-bar count-in into a take.
 //!
-//! Each comment is the block under it.
+//! ```text
+//! metronome::enable / level / count_in
+//! ```
+//!
+//! ```text
+//! metronome::enable(&mut session, true)?;
+//! metronome::level(&mut session, -6.0)?;
+//! metronome::count_in(&mut session, 1)?;
+//! record::start(&mut session, source)?;
+//! ```
 //!
 //! ```text
 //! cargo run --example metronome_count_in
@@ -19,20 +28,14 @@ fn main() -> Result<()> {
     let block = 256;
     let folder = std::env::temp_dir().join("metronome_count_in.superb");
     let mut session = session::create(&folder, rate, block)?;
-    // 120 bpm: a beat is 24_000 samples, 0.5 s. vox is armed.
+    // 120 bpm (a beat is 0.5 s). vox armed.
     session::set_tempo(&mut session, 120.0)?;
     assert!((session.memory.tempo_map().tempo_at(BeatPosition::ZERO) - 120.0).abs() < 1e-9);
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
     track::arm(&mut session, vox, true)?;
 
-    // The click is 50 ms (2_400 samples) of a decaying sine at −6 dB.
-    // Beat 1 of the bar is 1_500 Hz and full level; the crest is sample 8,
-    // where the phase is a quarter cycle and the amplitude has decayed
-    // eight steps, 0.491. The other beats are 1_000 Hz at 0.7 of that
-    // level, crest at sample 12, 0.340. Each render is 93 blocks, 23_808
-    // samples, just short of a beat, and each one holds one click. Four of
-    // them cover the clicks at 0, 0.5, 1.0 and 1.5 s and stop at sample
-    // 95_232, 768 samples short of the next bar.
+    // Click at −6 dB. Accent (beat 1) crest at sample 8; other beats at
+    // sample 12, 0.7×. 93 blocks per beat. Four beats → sample 95_232.
     metronome::enable(&mut session, true)?;
     metronome::level(&mut session, -6.0)?;
     transport::start(&mut session)?;
@@ -61,16 +64,8 @@ fn main() -> Result<()> {
     transport::stop(&mut session)?;
     metronome::enable(&mut session, false)?;
 
-    // One bar of count-in. The playhead is sought to 2.0 s (sample 96_000,
-    // beat 4) while stopped, so the block that applies the seek leaves it
-    // there. Recording rolls from sample 0 and punches in at sample 96_000.
-    // The click stays at −6 dB for the count-in. 562 blocks is
-    // 3 × 48_000 / 256. The punch lands on a block edge, so the playhead
-    // reads 2.00 s the moment the state becomes Recording. The clip starts
-    // there. 562 × 256 − 96_000 = 47_872 samples of take, 0.997 s, which
-    // prints as 1.00 s. The file keeps the count-in in front of the clip
-    // (offset 96_000). The clip is named from the next free
-    // `audio/vox <n>.wav`.
+    // 1 bar count-in. Seek to 2.0 s. Recording rolls from 0, punches in at
+    // 96_000. 562 blocks. Clip starts at 2.0 s, 47_872 samples, offset 96_000.
     metronome::count_in(&mut session, 1)?;
     transport::seek(&mut session, TimePosition::from_seconds(2.0, rate))?;
     session::steps::render_blocks(&mut session, 1)?;
