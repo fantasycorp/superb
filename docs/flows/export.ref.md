@@ -138,6 +138,6 @@ What a stem is the output of.
 
 **Variants**
 - `Audio` — An audio track.
-- `Midi` — A MIDI track, through its instrument.
+- `Midi` — A MIDI track, after its notes are turned into audio.
 - `Bus` — A bus: what was routed and sent to it, after its own strip.
 - `Mix` — The mix through the master.

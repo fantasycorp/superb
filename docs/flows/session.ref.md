@@ -440,7 +440,17 @@ root is only a path: nothing is made until a session is created in it.
 
 Where each part of a session lives inside its folder. Every path is worked
 out from the folder; nothing here touches the disk. `session::layout` gives
-the one for an open session.
+the one for an open session.  ``` use std::path::Path; use
+superb::session::Layout;  let layout = Layout::new("/music/My Show");
+assert_eq!(layout.folder(), Path::new("/music/My Show"));
+assert_eq!(layout.memory(), Path::new("/music/My Show/memory.json"));
+assert_eq!(layout.state(), Path::new("/music/My Show/state.json"));
+assert_eq!(layout.audio(), Path::new("/music/My Show/audio"));
+assert_eq!(layout.bounces(), Path::new("/music/My Show/bounces"));
+assert_eq!( layout.bounce("rough mix"), Path::new("/music/My
+Show/bounces/rough mix.wav") ); assert_eq!(layout.stems(),
+Path::new("/music/My Show/stems")); assert_eq!( layout.stem_set("final"),
+Path::new("/music/My Show/stems/final") ); ```
 
 **Methods**
 - `fn new(folder: impl Into<PathBuf>) -> Self` — The layout of the session folder `folder`.

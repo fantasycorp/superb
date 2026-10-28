@@ -101,7 +101,7 @@ pub fn midi_channel(session: &mut Session, track: TrackId, channel: Option<u8>) 
 Says which MIDI channel feeds a MIDI track: `Some(0..=15)` for one channel,
 `None` for all of them. Monitoring plays only that channel's notes and a
 recording keeps only them; every connected port still counts. State, like
-`input`; rebuilds, since the monitor instrument is built to listen.
+`input`; rebuilds, since the monitor synth is built to listen.
 
 **Takes**
 - `session: &mut Session` — the open session, borrowed mutably
@@ -353,12 +353,13 @@ track::arm(&mut session, vox, true)?;   // the next recording lands here
 pub fn monitor(session: &mut Session, track: TrackId, on: bool) -> Result<()>
 ```
 
-Turns monitoring on or off. A monitoring MIDI track carries a live
-instrument that plays whatever MIDI reaches the engine. A monitoring audio
-track plays the session's audio input (`devices::input`, feature `devices`)
-through its strip, on the channel(s) its `input` names (the first two when
-none is set), so you hear yourself while recording. State, saved with the
-session; it changes the mixer's shape, so it rebuilds. Buses do not monitor.
+Turns monitoring on or off. A monitoring MIDI track is still a MIDI track:
+the mixer puts a synth on its strip so notes reaching the engine become
+audio. A monitoring audio track plays the session's audio input
+(`devices::input`, feature `devices`) through its strip, on the channel(s)
+its `input` names (the first two when none is set), so you hear yourself
+while recording. State, saved with the session; it changes the mixer's
+shape, so it rebuilds. Buses do not monitor.
 
 **Takes**
 - `session: &mut Session` — the open session, borrowed mutably
@@ -371,7 +372,7 @@ session; it changes the mixer's shape, so it rebuilds. Buses do not monitor.
 
 **Undo** none: state, not an edit (saved through the state file, see `session::state_file`); rebuilds the mixer (at once while a device plays, otherwise at the next start).
 
-**Made of** `TrackState::monitor` through `session::set_state` → rebuild (the instrument or the input tap is a node in the mixer).
+**Made of** `TrackState::monitor` through `session::set_state` → rebuild (the synth or the input tap is a node in the mixer).
 
 **Example**
 

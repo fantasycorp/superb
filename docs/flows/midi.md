@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     let rate = SampleRate::HZ_48K;
     let mut session = session::create(std::env::temp_dir().join("keys"), rate, 128)?;
     let keys = track::add(&mut session, "keys", TrackKind::Midi)?;
-    track::monitor(&mut session, keys, true)?;          // a live instrument on the strip
+    track::monitor(&mut session, keys, true)?;          // synth on the strip so notes are audible
     transport::start(&mut session)?;
 
     midi::play_note(&mut session, 0, 60, 100)?;         // channel 0, middle C, velocity 100
