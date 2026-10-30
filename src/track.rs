@@ -3,8 +3,8 @@
 //!
 //! A track's *state* (mute, solo, arm, monitor, input, volume, pan, where
 //! its output goes) is what the strip shows. Monitoring is hearing the
-//! track's input live: MIDI through an instrument, audio through the
-//! session's audio input. Switches (mute, solo, arm,
+//! track's input live: a synth on a MIDI track so incoming notes become
+//! audio, the session's audio input on an audio track. Switches (mute, solo, arm,
 //! monitor) are saved with the session, heard at the next block and never
 //! undo steps. Volume and pan are edits: they coalesce in the undo history
 //! and reach the live strip at once. Adding, archiving and routing change
@@ -78,7 +78,7 @@ pub fn restore(session: &mut Session, track: TrackId) -> Result<()> {
 /// Says which MIDI channel feeds a MIDI track: `Some(0..=15)` for one
 /// channel, `None` for all of them. Monitoring plays only that channel's
 /// notes and a recording keeps only them; every connected port still
-/// counts. State, like `input`; rebuilds, since the monitor instrument is
+/// counts. State, like `input`; rebuilds, since the monitor synth is
 /// built to listen.
 ///
 /// Made of: `TrackState::midi_channel` through `session::set_state`, then
@@ -225,16 +225,16 @@ pub(crate) fn armed(session: &Session) -> Vec<TrackId> {
         .collect()
 }
 
-/// Turns monitoring on or off. A monitoring MIDI track carries a live
-/// instrument that plays whatever MIDI reaches the engine. A monitoring
-/// audio track plays the session's audio input (`devices::input`, feature
-/// `devices`) through its strip, on the channel(s) its [`input`] names (the
-/// first two when none is set), so you hear yourself while recording.
-/// State, saved with the session; it changes the mixer's shape, so it
-/// rebuilds. Buses do not monitor.
+/// Turns monitoring on or off. A monitoring MIDI track is still a MIDI
+/// track: the mixer puts a synth on its strip so notes reaching the
+/// engine become audio. A monitoring audio track plays the session's
+/// audio input (`devices::input`, feature `devices`) through its strip, on
+/// the channel(s) its [`input`] names (the first two when none is set), so
+/// you hear yourself while recording. State, saved with the session; it
+/// changes the mixer's shape, so it rebuilds. Buses do not monitor.
 ///
 /// Made of: `TrackState::monitor` through `session::set_state` → rebuild
-/// (the instrument or the input tap is a node in the mixer).
+/// (the synth or the input tap is a node in the mixer).
 pub fn monitor(session: &mut Session, track: TrackId, on: bool) -> Result<()> {
     if session.memory.track(track)?.kind == TrackKind::Bus {
         return Err(SuperbError::InvalidArgument {

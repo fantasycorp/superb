@@ -231,7 +231,7 @@ pub struct Stem {
 pub enum StemSource {
     /// An audio track.
     Audio,
-    /// A MIDI track, through its instrument.
+    /// A MIDI track, after its notes are turned into audio.
     Midi,
     /// A bus: what was routed and sent to it, after its own strip.
     Bus,

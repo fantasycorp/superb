@@ -2,8 +2,8 @@
 //! engine runs, and how to run that engine by hand.
 //!
 //! [`rebuild`] turns the [`Memory`] into a [`Mixer`] (a strip per track
-//! and bus, routing and sends, a node per clip, a live instrument per
-//! monitoring MIDI track) and publishes its graph to the engine, which
+//! and bus, routing and sends, a node per clip, a synth per monitoring
+//! MIDI track) and publishes its graph to the engine, which
 //! swaps it in between two blocks without a glitch. The structural flows
 //! call it for you. [`render_blocks`] runs the engine when no sound card is
 //! attached. The two pieces are public so a program can assemble its own:
@@ -133,10 +133,10 @@ pub fn render_blocks(session: &mut Session, blocks: usize) -> Result<PlanarBuffe
 /// Builds a fresh mixer for the memory and returns it with the handles
 /// the control side keeps: a strip per track and bus carrying the track's
 /// state, each track's output routed where the memory says, a send per
-/// send in the memory, a node per audible clip, a live instrument on every
-/// monitoring MIDI track so it sounds when you play, and a tap on the
-/// engine's live input on every monitoring audio track so you hear what it
-/// records.
+/// send in the memory, a node per audible clip, a synth on every
+/// monitoring MIDI track so notes arriving now become audio, and a tap on
+/// the engine's live input on every monitoring audio track so you hear
+/// what it records.
 ///
 /// The memory's and the mixer's ids are separate namespaces; the handles
 /// are keyed by the memory's, so a flow never sees a mixer id.
@@ -765,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn monitoring_midi_tracks_get_a_live_instrument() {
+    fn monitoring_midi_tracks_get_a_synth() {
         let mut session = session::create(session::scratch("keys"), R, 64).unwrap();
         let keys = track::add(&mut session, "keys", TrackKind::Midi).unwrap();
         transport::start(&mut session).unwrap();
@@ -773,7 +773,7 @@ mod tests {
         assert_eq!(
             mixer.graph().node_count(),
             5,
-            "master pair + click + track pair, no instrument"
+            "master pair + click + track pair, no synth"
         );
         session.memory.track_mut(keys).unwrap().state.monitor = true;
         let (mixer, _) = build_mixer(&session.memory, &session.audio, 2).unwrap();
