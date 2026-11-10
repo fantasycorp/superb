@@ -27,9 +27,10 @@ a musician would use.
 
 | Prefer saying | Module | What it is in a DAW |
 |---|---|---|
-| The session | `session` | New, open, save; markers, tempo; undo; the engine side in `session::steps` |
-| A track and its state | `track` | Add, remove, rename; mute, solo, arm, monitor, input, volume, pan, route; meters |
-| A clip | `clip` | Audio or MIDI on a track: add, move, archive, restore |
+| The session | `session` | New, open, save; import audio; tempo, meter, loop range; undo; the engine side in `session::steps` |
+| A track and its state | `track` | Add, archive, restore, rename; mute, solo, arm, monitor, input, volume, pan, route; meters |
+| A clip | `clip` | Audio or MIDI on a track: add, move, split, trim, fade, archive, restore; notes |
+| A marker | `marker` | A named place on the timeline: add, move, rename, remove |
 | The transport | `transport` | Start, stop, locate, loop; where the playhead is |
 | A send | `send` | A copy of a track into a bus: add, remove, level, on/off |
 | MIDI, the keyboard | `midi` | Playing notes, connecting a controller |

@@ -1,90 +1,120 @@
-# Superb Design: Remaining Work
+# Remaining work
 
-This document tracks features not yet implemented in Superb. For a shelved proposal on ARA 2 integration, see [ARA2_DESIGN.md](ARA2_DESIGN.md).
+What Superb does not do yet, and the order to build it in. This is the one
+list: [README.md](README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+link here instead of keeping their own. What works today is in the README's
+status section and [CHANGELOG.md](CHANGELOG.md). Each primitive's page under
+`docs/primitives/` ends with the limits of that module alone.
 
-Last updated: Tue Nov 10 2026
+Last updated: 2026-11-10.
 
-## Overview
+## Build order
 
-Superb follows a two-tier architecture (flows + primitives). Much of the core DAW functionality is implemented, but several features are either missing entirely or only exist at the primitive level. This document enumerates remaining work as of the current `main` branch.
+Each step says why it sits where it does. A step is done when it has a
+flow verb with a "Made of:" line, a reference note in
+`scripts/reference.py`, a page or a row in `docs/`, an example, and, on the
+audio path, a no-alloc test.
 
-## Completed (for context)
+| # | what | why here |
+|---|---|---|
+| 1 | Tempo ramp verb | The engine already ramps (`TempoMap::add_tempo_ramp`, `SetTempo::ramped`). Only the `session` verb is missing, plus a check that the click and MIDI scheduling follow a ramp. Smallest step with a visible result. |
+| 2 | Inserts on rebuild, then the plugins flow | The memory stores a track's inserts and `build_mixer` ignores them, so nothing stored as an insert is ever heard. Begin with the built-in dynamics as inserts (no FFI), then CLAP. Decide here how a plugin instance outlives a rebuild. |
+| 3 | Automation in the memory, with a flow | Envelopes exist as primitives, but the memory owns no lanes. Automation needs insert parameters as targets, so it follows step 2. |
+| 4 | Incremental mixer updates | A rebuild replaces the whole mixer. Today that costs a meter reset; once plugins exist it cuts their tails and builds them again on every clip drag. |
+| 5 | Duplex streams, and MIDI on the audio clock | Hardware MIDI lands at block resolution, which is timing error in every MIDI recording. Input and output run as two streams on two clocks. |
+| 6 | Loop recording | Builds on the recording that exists. Needs a model for recordings stacked on one range, and a word for them: TERMINOLOGY reserves "take". |
+| 7 | MIDI ports per track, then Standard MIDI Files | Every connected port feeds every track today. Files are the way MIDI moves between programs. SysEx and MIDI Time Code are rarer and come last. |
+| 8 | Encoders other than WAV, with dither | Bouncing to 16-bit truncates without dither. Any encoder has to pass the licence rule in CONTRIBUTING. |
+| 9 | VST3, then ARA 2 | The largest and the most constrained by licence. ARA 2 needs a plugins flow and VST3 first; see [ARA2_DESIGN.md](ARA2_DESIGN.md). |
 
-See [README.md](README.md#status) and [CHANGELOG.md](CHANGELOG.md) for the full list of implemented features. Key areas working today: session/memory/undo, tracks/clips/markers/routing, transport/tempo/meter, mixer with buses/sends, recording (audio/MIDI) with crash recovery, metronome/count-in, export to WAV/stems, device I/O, MIDI messages/channels/hardware input, CLAP plugin hosting primitives, and insert chains/automation/analysis/dynamics at the primitive level.
+## Everything not built
 
-## Remaining Work
+### Plugins and inserts
 
-### 1) Plugins & Inserts
-| Item | Status | Notes |
-| --- | --- | --- |
-| Plugins flow (top-level API) | Not started | No `src/plugins.rs` flow. Primitives exist under `primitives/plugins/` (CLAP default, VST3 stub). Need verbs for scanning/loading/instantiating plugins, attaching them to tracks/buses, managing presets/state, etc. |
-| Load track-stored inserts on rebuild | Not started | Inserts/chains exist in `primitives/mixer` (`Mixer::add_insert`), but `primitives/session` insert storage is not wired into mixer rebuilds. Documented as missing in `docs/ARCHITECTURE.md`. |
-| VST3 hosting | Stub only | `primitives/plugins/vst3.rs` returns `unsupported()`, `AVAILABLE = false`. Full COM/SDK integration required if pursued. |
-| ARA 2 support | Shelved (design only) | See [ARA2_DESIGN.md](ARA2_DESIGN.md). Likely via ARA-capable VST3. |
+| item | state | notes |
+|---|---|---|
+| Stored inserts loaded on rebuild | not started | `Insert` and its commands are in `primitives::session`; `Mixer::add_insert` is in `primitives::mixer`; `session::steps::build_mixer` does not join them. |
+| Plugins flow | not started | Scan, load, place on a track or bus, parameters, presets and state. The host is `primitives::plugins` (CLAP). |
+| Instrument plugins on MIDI tracks | not started | A monitoring MIDI track gets `MonoSynthNode`, a stand-in. |
+| VST3 hosting | stub | `primitives::plugins::vst3` returns `unsupported()`. The SDK's licence terms have to be reviewed first (CONTRIBUTING). |
+| ARA 2 | shelved, design only | [ARA2_DESIGN.md](ARA2_DESIGN.md). |
 
-### 2) MIDI
-| Item | Status | Notes |
-| --- | --- | --- |
-| Tell MIDI ports apart per track | Not started | Currently MIDI routing is per-track channel selection; need ability to assign specific hardware/software MIDI ports per track and filter accordingly. |
-| SysEx support | Not implemented | Mentioned as unsupported in `primitives/midi`. Need parsing/serialization and safe routing (real-time considerations). |
-| MIDI Time Code (MTC) | Not implemented | Referenced as unsupported alongside SysEx. |
-| Standard MIDI Files (SMF) import/export | Not started | No SMF read/write. Would need format support, tempo map integration, and flow APIs. |
+### Mixer and engine
 
-### 3) Recording
-| Item | Status | Notes |
-| --- | --- | --- |
-| Loop recording (take lanes/comping) | Not started | Punch in/out exists. Need loop recording behavior (multiple takes per clip/region, take management, comp selection). May require session model extensions and undo integration. |
+| item | state | notes |
+|---|---|---|
+| Incremental mixer updates | not started | Clip gain, fades and mute rebuild the whole mixer; so does every undo, even of a fader. |
+| Pan law in the memory | not started | A pan law is set on the live strip. A rebuild carries it over, but it is not saved. |
+| Multi-bus and sidechain nodes | not started | A node has one input bus and one output bus. |
+| Flows for the dynamics | primitives only | Compressor, limiter, gate, de-esser and leveler are nodes; they become reachable as inserts in step 2. |
+| Flow for analysis | primitives only | `export::stems` reports loudness; the meters are otherwise yours to call. |
 
-### 4) Tempo & Timing
-| Item | Status | Notes |
-| --- | --- | --- |
-| Tempo ramps (glide/curves) | Not started | Tempo map supports stepped changes only. Need ramp interpolation, sample-accurate application, click/transport/mixer alignment, and possible automation integration. |
-| Align hardware MIDI timestamps with the audio clock | Not started | `primitives/midi/input` receives timestamps from backends but does not re-stamp to the audio clock. Needed for tight sync. |
+### Automation
 
-### 5) Audio Devices
-| Item | Status | Notes |
-| --- | --- | --- |
-| Duplex device streams (simultaneous I/O) | Not started | Input and output streams exist separately. Need combined duplex streams, sync, latency reporting, and robust error handling. |
+| item | state | notes |
+|---|---|---|
+| Lanes owned by the session | not started | `primitives::automation` has envelopes and modes; the memory stores none, per track or per clip. |
+| Automation flow | not started | Add and edit points, modes, write from a moving control. |
 
-### 6) Mixer & Engine
-| Item | Status | Notes |
-| --- | --- | --- |
-| Incremental mixer updates (vs full rebuild) | Not started | Structural changes trigger a full rebuild and swap. Need differential updates while preserving real-time safety (and handling plugin tails/meters appropriately). |
-| Expose insert chains via flows | Partial (primitives only) | Insert chains exist primitively; need flow-level APIs once plugins flow is designed. |
+### Tempo and time
 
-### 7) File I/O & Encoding
-| Item | Status | Notes |
-| --- | --- | --- |
-| Encoders other than WAV | Not started | Export/bounce is WAV-only currently. Need additional encoders behind features as appropriate, respecting licensing constraints. |
+| item | state | notes |
+|---|---|---|
+| Tempo ramp verb | primitive done | `session::set_tempo` and `tempo_change` step; `commands::SetTempo::ramped` ramps. |
+| Hardware MIDI on the audio clock | not started | `primitives::midi::input` takes the backend's timestamps as they are. |
 
-### 8) Flow APIs for primitive-only features
-| Item | Status | Notes |
-| --- | --- | --- |
-| Automation flow | Primitives only | Envelopes/modes exist in `primitives::automation`. Consider flow verbs for adding/editing automation, lanes, etc. |
-| Analysis flow | Primitives only | LUFS/true peak/RMS/silence/alignment exist. Consider higher-level flow APIs if needed. |
-| Dynamics flow | Primitives only | Compressor/limiter/gate/de-esser/leveler exist as nodes. Consider flow-level configuration/presets or document as graph-building utilities. |
+### MIDI
 
-## Suggested Priorities
+| item | state | notes |
+|---|---|---|
+| A port per track | not started | A track chooses a channel (`track::midi_channel`), not a port. |
+| Disconnecting an input | not started | `midi::connect_input` has no counterpart; the bridge closes when removed from `Session::midi_inputs`. |
+| Standard MIDI Files | not started | Import and export, through the tempo map. |
+| SysEx | not started | Messages are fixed-size on the audio path. |
+| MIDI Time Code | not started | |
 
-1. **Plugins flow + insert wiring** - Unblocks plugin management and makes existing insert chain/mixer capabilities accessible via flows.
-2. **MIDI port routing + SysEx/MTC/SMF** - Common DAW requirements; SMF especially useful for interoperability.
-3. **Loop recording** - Extends the existing robust recording system.
-4. **Tempo ramps** - Important for musical workflows; touches tempo map, transport, click, and possibly automation.
-5. **Duplex streams + MIDI clock alignment** - Improves hardware integration/sync.
-6. **Incremental mixer updates** - Performance/UX improvement, but more invasive to the rebuild/swap model.
-7. **Additional encoders / VST3** - Format expansion; VST3 has SDK/licensing complexity.
-8. **ARA 2** - See [ARA2_DESIGN.md](ARA2_DESIGN.md); keep shelved until plugins flow + document model are solid.
+### Recording
 
-## Implementation Notes
+| item | state | notes |
+|---|---|---|
+| Loop recording | not started | Punch in and out exist. |
 
-- Follow existing patterns: flows are free functions over `&mut Session`, document with "Made of:" lists, edits go through undo where appropriate, state changes may not.
-- Respect real-time safety: any audio-thread changes must follow `prepare`/`process` contracts, avoid allocations on audio thread, prefer graph rebuild/swap patterns until incremental updates are designed.
-- Feature-gate hardware/codecs: use existing feature flags (`devices`, `midi-io`, `files`, `clap`) and add new ones as needed (`vst3`, `ara2`, encoders) with non-default/off-by-default where heavy/licensed.
-- Update docs/examples/tests alongside implementation. Reference docs are generated from source - keep signatures/docs in sync.
+### Devices
 
-## Handoff Notes for Fable
+| item | state | notes |
+|---|---|---|
+| Duplex streams | not started | Input and output are separate streams; a recording lines them up by the device clock. |
 
-- Start by reading [README.md](README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for conventions.
-- Check [docs/flows/](docs/flows/) for flow patterns and existing APIs.
-- Look at `src/` flows and corresponding `primitives/` modules for how features are split.
-- Use this document to scope work; ARA 2 details are intentionally separated in `ARA2_DESIGN.md` to avoid scope creep.
+### Files
+
+| item | state | notes |
+|---|---|---|
+| Encoders other than WAV | not started | Writing is WAV only. |
+| Dither | not started | `Bounce` defaults to 16-bit PCM, `Stems` to 24-bit. |
+
+### The API itself
+
+Found in review, not features. Each breaks a rule in CONTRIBUTING's
+"Naming".
+
+| item | notes |
+|---|---|
+| `session::set_tempo`, `session::set_loop` | Setters are nouns without `set_`. |
+| `send::enable`, `metronome::enable` | Every other switch is the noun with `on`: `track::mute(.., on)`. |
+| The noun "take" | In `record` docs and TERMINOLOGY itself; the word is reserved. |
+| `mixer/console.rs`, "console" in `io::cache` | The word is "mixer". |
+| `TrackSend::pre_fader: bool` | `SendTap` exists; the memory should carry the enum. |
+| `commands::set_track_mute`, `solo`, `arm`, `monitor` | State never enters the undo history, yet these are undoable commands. |
+| `SuperbError::Message(String)` | Used over a hundred times; an application cannot tell "no such device" from "file missing", and I/O errors lose the path. |
+| `src/record.rs` | 2,300 lines: flow, capture, files and recovery in one file. |
+
+## How to build any of it
+
+- Flows are free functions over `&mut Session`. Edits go through the undo
+  history; state goes through `session::set_state` and never does.
+- `prepare` may allocate, `process` never does. Until step 4, structure
+  changes by building a whole mixer and swapping it in.
+- Hardware and codecs stay behind features, off by default.
+- Docs, example and tests land with the code. `docs/flows/<flow>.ref.md`
+  is generated; every example in the Markdown is compiled by
+  `cargo test --doc --features hardware,files`.

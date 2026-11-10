@@ -16,7 +16,7 @@ and connects them deliberately.
 
 ```text
  flows (free functions over a Session)
- session · track · clip · transport · send · midi · record · metronome · export · devices
+ session · track · clip · marker · transport · send · midi · record · metronome · export · devices
  ─────────────────────────────────────────────────────────────────────
  primitives
    memory side (UI thread)             engine side (audio thread)
@@ -173,7 +173,9 @@ Inserts sit between the input node and the strip node; pre-fader sends
 tap after the last insert.
 
 **Live engine.** Commands and graphs go one way, position and transport
-state come back as atomics. The tempo map travels like a graph: a rebuild
+state come back as atomics. A seek that no block has applied yet is
+already the position the handle reports, so the playhead is never read
+back as the place it just left. The tempo map travels like a graph: a rebuild
 sends the memory's whole map and the audio thread hands the old one back
 to be freed, so a tempo or meter change never allocates there. Captured
 audio enters the same way: a
@@ -245,7 +247,8 @@ signal path loads it and places a `PluginNode`, or calls
 **Rebuild.** A rebuild builds a whole new mixer and swaps it in; it never
 edits the running one. That keeps the audio thread's contract simple at
 the cost of resetting meters, and plugin tails when that mixer contains
-plugins. Structural edits trigger it themselves: at once while a device
+plugins. A pan law set on a live strip is carried over to the track's
+new strip; nothing else set on a handle alone is. Structural edits trigger it themselves: at once while a device
 drives the engine, otherwise at the next start or render. Level edits and
 state changes do not rebuild because they go to the live handles directly.
 
@@ -269,13 +272,6 @@ but Rust. The CLAP host (`clap`) is on by default and can be turned off.
 
 ## Not there yet
 
-Duplex device streams. Re-stamping hardware MIDI onto the audio clock.
-A plugins flow (the host is a primitive). Loading a track's stored inserts
-into the mixer on rebuild. Incremental edits to a running mixer (a
-rebuild replaces it). Loop recording. VST3 hosting. SysEx, MIDI Time Code and
-Standard MIDI Files. Encoders other than WAV. Per-clip automation lanes
-owned by the session. Multi-bus or sidechain nodes.
-
-See [../DESIGN.md](../DESIGN.md) for a detailed breakdown and suggested
-priorities. ARA 2 plugin support is proposed in
+[../DESIGN.md](../DESIGN.md) is the one list of what is not built and the
+order to build it in. ARA 2 plugin support is proposed in
 [../ARA2_DESIGN.md](../ARA2_DESIGN.md) (shelved for now).
