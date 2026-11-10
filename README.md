@@ -204,6 +204,10 @@ device streams, aligning hardware MIDI timestamps with the audio clock,
 updating a running mixer incrementally (a rebuild replaces it), VST3
 hosting, SysEx and Standard MIDI Files, and encoders other than WAV.
 
+See [DESIGN.md](DESIGN.md) for a breakdown of remaining work and suggested
+priorities. ARA 2 plugin support is proposed in
+[ARA2_DESIGN.md](ARA2_DESIGN.md) (shelved for now).
+
 ## Licence
 
 Apache-2.0 OR MIT, at your option. All code in this repository is original

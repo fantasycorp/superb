@@ -275,3 +275,7 @@ into the mixer on rebuild. Incremental edits to a running mixer (a
 rebuild replaces it). Loop recording. VST3 hosting. SysEx, MIDI Time Code and
 Standard MIDI Files. Encoders other than WAV. Per-clip automation lanes
 owned by the session. Multi-bus or sidechain nodes.
+
+See [../DESIGN.md](../DESIGN.md) for a detailed breakdown and suggested
+priorities. ARA 2 plugin support is proposed in
+[../ARA2_DESIGN.md](../ARA2_DESIGN.md) (shelved for now).
