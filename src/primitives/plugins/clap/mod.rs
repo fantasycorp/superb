@@ -1106,12 +1106,7 @@ mod tests {
 
     const R: SampleRate = SampleRate::HZ_48K;
 
-    /// The in-process test plugin keeps global counters, so tests that
-    /// create instances run one at a time.
-    fn serial() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    use super::test_plugin::serial;
 
     fn bundle() -> Arc<ClapBundle> {
         ClapBundle::from_entry(&test_plugin::TEST_ENTRY, "/virtual/test.clap").unwrap()
