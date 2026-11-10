@@ -49,13 +49,13 @@ fn main() -> Result<()> {
             b.channel_mut(ch)[i] = sb;
         }
     }
-    session.audio.insert("a.wav", a);
-    session.audio.insert("b.wav", b);
-    clip::add(&mut session, lead, "a.wav", TimePosition::ZERO)?;
+    session.audio.insert("audio/a.wav", a);
+    session.audio.insert("audio/b.wav", b);
+    clip::add(&mut session, lead, "audio/a.wav", TimePosition::ZERO)?;
     clip::add(
         &mut session,
         pad,
-        "b.wav",
+        "audio/b.wav",
         TimePosition::from_seconds(0.5, rate),
     )?;
     track::volume(&mut session, pad, -6.0)?;

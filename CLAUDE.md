@@ -19,12 +19,13 @@ for the engine, `docs/flows.md` for the flow tier, and
 - `docs/primitives/<module>.md`, `docs/flows/<flow>.md` (short, by hand),
   `docs/flows/<flow>.ref.md` (generated: `python3 scripts/reference.py`,
   never edited), `docs/quick-start.md` (task index); the docs site
-  (Fumadocs) lives in `docs/` too and renders that Markdown: `cd docs && pnpm dev`.
+  (Fumadocs) lives in `docs/` too and renders that Markdown: `cd docs && bun dev`.
 
 ## Commands
 
 ```sh
 cargo test                                            # no hardware needed
+cargo test --doc --features hardware,files            # every example in the Markdown
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --features hardware -- -D warnings
 cargo fmt --all -- --check

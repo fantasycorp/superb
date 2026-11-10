@@ -23,8 +23,8 @@
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //! let mut tone = PlanarBuffer::new(2, 4_000);
 //! tone.fill(0.5);
-//! session.audio.insert("tone.wav", tone);
-//! clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! session.audio.insert("audio/tone.wav", tone);
+//! clip::add(&mut session, vox, "audio/tone.wav", TimePosition::ZERO)?;
 //! session::steps::rebuild(&mut session)?;
 //! for (_, strip) in &session.mixer.strips {
 //!     strip.set_pan_law(PanLaw::Balance);

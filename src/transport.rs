@@ -23,8 +23,8 @@
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //! let mut tone = PlanarBuffer::new(2, 400);
 //! tone.fill(0.5);
-//! session.audio.insert("tone.wav", tone);
-//! clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! session.audio.insert("audio/tone.wav", tone);
+//! clip::add(&mut session, vox, "audio/tone.wav", TimePosition::ZERO)?;
 //! transport::start(&mut session)?;
 //! let audio = session::steps::render_blocks(&mut session, 10)?;
 //! assert_eq!(audio.frames(), 640);

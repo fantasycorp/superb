@@ -4,7 +4,7 @@ A click while the transport rolls; a count-in before a recording.
 
 ## Example
 
-```rust
+```rust,no_run
 use superb::primitives::session::TrackKind;
 use superb::primitives::{Result, SampleRate, TimePosition};
 use superb::{metronome, record, session, track, transport};

@@ -69,16 +69,16 @@ fn main() -> Result<()> {
         for (i, s) in tone.channel_mut(0).iter_mut().enumerate() {
             *s = level * (core::f32::consts::TAU * hz * i as f32 / rate.hz() as f32).sin();
         }
-        session.audio.insert(format!("{name}.wav"), tone);
+        session.audio.insert(format!("audio/{name}.wav"), tone);
     }
-    clip::add(&mut session, host, "host.wav", TimePosition::ZERO)?;
+    clip::add(&mut session, host, "audio/host.wav", TimePosition::ZERO)?;
     clip::add(
         &mut session,
         guest,
-        "guest.wav",
+        "audio/guest.wav",
         TimePosition::from_seconds(0.5, rate),
     )?;
-    clip::add(&mut session, music, "music.wav", TimePosition::ZERO)?;
+    clip::add(&mut session, music, "audio/music.wav", TimePosition::ZERO)?;
 
     // Mix to bounces/rough mix.wav. Stem set "final".
     let rough = layout.bounce("rough mix");
