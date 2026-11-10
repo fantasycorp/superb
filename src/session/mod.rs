@@ -1031,4 +1031,27 @@ mod tests {
             assert!(slow.is_err());
         }
     }
+
+    #[test]
+    fn the_saved_playhead_survives_a_state_change_before_any_block() {
+        let folder = scratch("playhead");
+        let mut session = create(&folder, R, 64).unwrap();
+        let vox = track::add(&mut session, "vox", TrackKind::Audio).unwrap();
+        let state = layout(&session).state();
+        state_file(&mut session, Some(state.clone())).unwrap();
+        crate::transport::seek(&mut session, TimePosition::from_samples(6_400)).unwrap();
+        save(&mut session).unwrap();
+        drop(session);
+
+        let mut session = open(&folder, 64).unwrap();
+        state_file(&mut session, Some(state.clone())).unwrap();
+        // No block has run, so the engine has not applied the seek yet.
+        track::mute(&mut session, vox, true).unwrap();
+        assert_eq!(session.memory.playhead(), TimePosition::from_samples(6_400));
+        assert_eq!(
+            Memory::load_state(&state).unwrap().playhead,
+            6_400,
+            "the state file keeps it too"
+        );
+    }
 }

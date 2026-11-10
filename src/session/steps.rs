@@ -70,8 +70,12 @@ use crate::session::{MixerHandles, Session};
 /// memory at the same time, so an opened session, a tempo or meter change
 /// and an undone edit all reach the transport.
 ///
+/// A pan law set on a live strip (`StripParams::set_pan_law`) is carried
+/// over to the new strip of the same track; it is not saved.
+///
 /// Made of: `EngineHandle::reclaim` (frees graphs the engine has retired, on
-/// this thread) → [`build_mixer`] → [`publish`] →
+/// this thread) → [`build_mixer`] → `StripParams::set_pan_law` from the strip
+/// each track had → [`publish`] →
 /// `EngineHandle::send(TempoMap, SetLoop, SetLoopEnabled)` from the memory, and
 /// while the audio thread is still in the session, `LiveGraph::apply_pending`
 /// so the swap does not wait for a [`render_blocks`]. Afterwards
@@ -79,6 +83,13 @@ use crate::session::{MixerHandles, Session};
 pub fn rebuild(session: &mut Session) -> Result<()> {
     session.engine.reclaim();
     let (mixer, handles) = build_mixer(&session.memory, &session.audio, session.channels)?;
+    // The pan law is set on the live strip and the memory does not hold
+    // it, so a strip that was there before keeps the one it had.
+    for (track, strip) in &handles.strips {
+        if let Some(before) = session.mixer.strip(*track) {
+            strip.set_pan_law(before.pan_law());
+        }
+    }
     publish(&mut session.engine, mixer)?;
     session
         .engine
@@ -897,5 +908,22 @@ mod tests {
             }
         }
         assert!(failed, "no audio thread: the queue stays full");
+    }
+
+    #[test]
+    fn a_rebuild_keeps_the_pan_law_of_a_strip() {
+        use crate::primitives::mixer::PanLaw;
+        let (mut session, vox) = tone_rig();
+        rebuild(&mut session).unwrap();
+        let strip = session.mixer.strip(vox).unwrap();
+        assert_eq!(strip.pan_law(), PanLaw::ConstantPower);
+        strip.set_pan_law(PanLaw::Balance);
+        track::add(&mut session, "gtr", TrackKind::Audio).unwrap();
+        rebuild(&mut session).unwrap();
+        assert_eq!(
+            session.mixer.strip(vox).unwrap().pan_law(),
+            PanLaw::Balance,
+            "a structural edit does not put the default back"
+        );
     }
 }
