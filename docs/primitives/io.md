@@ -35,7 +35,9 @@ resampling and bounce/export helpers.
   `AudioThread` is the audio side (`tick` renders one block, `tick_timed`
   one that starts at a `BlockStart` on the device clock; with `devices`,
   `run_on_device` moves it into an output callback and returns a
-  `LiveOutput`, whose `stop` hands the thread back). When the transport
+  `LiveOutput`, whose `stop` hands the thread back; a device that does
+  not open hands it back with the error). `EngineHandle::position` is the
+  target of a seek from the moment it is sent. When the transport
   starts rolling under a device clock the audio thread publishes a
   `RollStart` (position and playback instant) that
   `EngineHandle::roll_start` reads, and a recording lines its first frame

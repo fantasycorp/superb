@@ -125,6 +125,9 @@ struct Shared {
     /// 0 stopped, 1 playing, 2 recording.
     state: AtomicU8,
     blocks: AtomicU64,
+    /// How many seeks the audio thread had applied when it last published
+    /// `position`; the handle compares it with how many it sent.
+    seeks: AtomicU64,
     /// Seqlock over the roll start below: odd while it is being written;
     /// halved, how many times the transport has started rolling under a
     /// device clock.
@@ -198,18 +201,31 @@ pub struct EngineHandle {
     load: Arc<LoadMeter>,
     sample_rate: SampleRate,
     max_frames: usize,
+    /// Seeks sent so far, and where the last one went: the playhead until
+    /// the audio thread has applied it.
+    seeks_sent: u64,
+    last_seek: TimePosition,
 }
 
 impl EngineHandle {
     /// Queues a command. Fails with [`SuperbError::CapacityExceeded`] if
     /// [`COMMAND_CAPACITY`] commands are already waiting.
     pub fn send(&mut self, command: EngineCommand) -> Result<()> {
+        let seek = match &command {
+            EngineCommand::Seek(to) => Some(*to),
+            _ => None,
+        };
         self.commands
             .push(command)
             .map_err(|_| SuperbError::CapacityExceeded {
                 what: "engine command queue",
                 capacity: COMMAND_CAPACITY,
-            })
+            })?;
+        if let Some(to) = seek {
+            self.seeks_sent += 1;
+            self.last_seek = to;
+        }
+        Ok(())
     }
 
     /// Prepares `graph` for this engine's sample rate and block size and
@@ -254,8 +270,16 @@ impl EngineHandle {
             })
     }
 
-    /// Playhead position after the last block the audio thread rendered.
+    /// Where the playhead is: the position after the last block the audio
+    /// thread rendered, or where the last [`EngineCommand::Seek`] sent it
+    /// while that seek is still waiting for a block. So a seek is never
+    /// read back as the place it left.
     pub fn position(&self) -> TimePosition {
+        // `seeks` is published after `position`, so once it has caught up
+        // the position already includes the seek.
+        if self.shared.seeks.load(Ordering::Acquire) < self.seeks_sent {
+            return self.last_seek;
+        }
         TimePosition::from_samples(self.shared.position.load(Ordering::Acquire))
     }
 
@@ -357,6 +381,8 @@ pub struct AudioThread {
     /// this thread.
     block_start: Option<BlockStart>,
     was_rolling: bool,
+    /// Seeks applied so far; published with the position after each block.
+    seeks_applied: u64,
 }
 
 impl AudioThread {
@@ -379,7 +405,10 @@ impl AudioThread {
                 EngineCommand::Play => self.engine.transport_mut().play(),
                 EngineCommand::Record => self.engine.transport_mut().record(),
                 EngineCommand::Stop => self.engine.transport_mut().stop(),
-                EngineCommand::Seek(position) => self.engine.transport_mut().seek(position),
+                EngineCommand::Seek(position) => {
+                    self.engine.transport_mut().seek(position);
+                    self.seeks_applied += 1;
+                }
                 EngineCommand::SetLoop(range) => self.engine.transport_mut().set_loop(range),
                 EngineCommand::SetLoopEnabled(on) => {
                     self.engine.transport_mut().set_loop_enabled(on)
@@ -466,6 +495,9 @@ impl AudioThread {
             .position
             .store(transport.position().samples(), Ordering::Release);
         self.shared
+            .seeks
+            .store(self.seeks_applied, Ordering::Release);
+        self.shared
             .state
             .store(state_to_u8(transport.state()), Ordering::Release);
         self.shared.blocks.fetch_add(1, Ordering::Release);
@@ -494,24 +526,30 @@ impl AudioThread {
     /// prepared for them; a mismatch is rejected rather than silently
     /// re-prepared. The callback calls [`tick_timed`](Self::tick_timed)
     /// with the device clock.
+    ///
+    /// A stream that cannot be opened (no such device, a rate it does not
+    /// do) costs nothing: the error comes back with the audio thread, so
+    /// the caller can go on without a device or try another.
     #[cfg(feature = "devices")]
     pub fn run_on_device(
         self,
         config: &crate::primitives::io::device::OutputConfig,
-    ) -> Result<LiveOutput> {
-        let (rate, frames) = self
-            .engine
-            .prepared_config()
-            .ok_or(SuperbError::NotPrepared)?;
+    ) -> core::result::Result<LiveOutput, (Box<AudioThread>, SuperbError)> {
+        let Some((rate, frames)) = self.engine.prepared_config() else {
+            return Err((Box::new(self), SuperbError::NotPrepared));
+        };
         if config.sample_rate != rate || config.max_block_frames != frames {
-            return Err(SuperbError::InvalidArgument {
-                what: "output config must match the live engine's sample rate and block size",
-            });
+            return Err((
+                Box::new(self),
+                SuperbError::InvalidArgument {
+                    what: "output config must match the live engine's sample rate and block size",
+                },
+            ));
         }
         let load = self.engine.load();
         let thread = Arc::new(Mutex::new(Some(self)));
         let worker = Arc::clone(&thread);
-        let stream = crate::primitives::io::device::OutputStream::open_with_meter(
+        let opened = crate::primitives::io::device::OutputStream::open_with_meter(
             config,
             move |block: &mut PlanarBuffer, start: BlockStart| {
                 // Never waits: the control side holds this lock only to
@@ -530,8 +568,19 @@ impl AudioThread {
                 }
             },
             load,
-        )?;
-        Ok(LiveOutput { stream, thread })
+        );
+        match opened {
+            Ok(stream) => Ok(LiveOutput { stream, thread }),
+            Err(error) => {
+                // The stream is gone, and with it the only other holder.
+                let back = thread
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take()
+                    .expect("only LiveOutput::stop empties the slot, and no LiveOutput was made");
+                Err((Box::new(back), error))
+            }
+        }
     }
 }
 
@@ -659,6 +708,7 @@ fn pair(
         roll_seq: AtomicU64::new(0),
         roll_position: AtomicI64::new(0),
         roll_instant_us: AtomicU64::new(0),
+        seeks: AtomicU64::new(0),
     });
     let load = engine.load();
     Ok((
@@ -673,6 +723,8 @@ fn pair(
             load,
             sample_rate,
             max_frames,
+            seeks_sent: 0,
+            last_seek: TimePosition::ZERO,
         },
         AudioThread {
             engine,
@@ -685,6 +737,7 @@ fn pair(
             shared,
             block_start: None,
             was_rolling: false,
+            seeks_applied: 0,
         },
     ))
 }
@@ -995,5 +1048,20 @@ mod tests {
         audio.tick_timed(&mut out, at(5_005_333)).unwrap();
         let again = control.roll_start().unwrap();
         assert_eq!((again.rolls, again.instant_us), (2, 5_006_666));
+    }
+
+    #[test]
+    fn a_seek_is_the_position_until_a_block_applies_it() {
+        let (mut control, mut audio) = Engine::live(R, 64, 120.0).unwrap();
+        control
+            .send(EngineCommand::Seek(TimePosition::from_samples(6_400)))
+            .unwrap();
+        assert_eq!(control.position(), TimePosition::from_samples(6_400));
+        let mut out = PlanarBuffer::new(2, 64);
+        audio.tick(&mut out).unwrap();
+        assert_eq!(control.position(), TimePosition::from_samples(6_400));
+        control.send(EngineCommand::Play).unwrap();
+        audio.tick(&mut out).unwrap();
+        assert_eq!(control.position(), TimePosition::from_samples(6_464));
     }
 }
