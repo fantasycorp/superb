@@ -44,6 +44,13 @@ static TRANSPORT_PLAYING: AtomicBool = AtomicBool::new(false);
 static LAST_NOTE: AtomicU32 = AtomicU32::new(0);
 static LAST_HOST: AtomicUsize = AtomicUsize::new(0);
 
+/// The counters here are global, so every test that creates an instance
+/// holds this for as long as it runs: one at a time.
+pub fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Instances currently alive (created and not yet destroyed).
 pub fn live_instances() -> usize {
     LIVE.load(Ordering::SeqCst)
@@ -524,6 +531,7 @@ mod tests {
     /// 16 frames of latency once activated.
     #[test]
     fn example() {
+        let _guard = super::serial();
         let bundle = ClapBundle::from_entry(&TEST_ENTRY, "/virtual/test.clap").unwrap();
         assert_eq!(bundle.path(), Path::new("/virtual/test.clap"));
         let descriptors = bundle.descriptors();
