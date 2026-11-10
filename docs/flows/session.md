@@ -4,7 +4,7 @@ Create, open and save a session; tempo, meter and loop range; undo.
 
 ## Example
 
-```rust
+```rust,no_run
 use superb::primitives::session::TrackKind;
 use superb::primitives::transport::LoopRange;
 use superb::primitives::{BeatPosition, Result, SampleRate, TimePosition, TimeSignature};
@@ -17,8 +17,8 @@ fn main() -> Result<()> {
     let mut session = session::create(&folder, rate, 256)?;
 
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
-    let take = session::import_audio(&mut session, "/music/take.wav")?;   // audio/take.wav
-    clip::add(&mut session, vox, take.key, TimePosition::ZERO)?;
+    let vocal = session::import_audio(&mut session, "/music/vocal.wav")?;   // audio/vocal.wav
+    clip::add(&mut session, vox, vocal.key, TimePosition::ZERO)?;
 
     session::set_tempo(&mut session, 100.0)?;
     session::tempo_change(&mut session, BeatPosition::new(16.0), Some(120.0))?;   // faster from bar 5

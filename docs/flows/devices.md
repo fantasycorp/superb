@@ -4,7 +4,9 @@ Audio and MIDI hardware. Feature `devices` for audio, `midi-io` for MIDI ports.
 
 ## Example
 
-```rust
+With the `hardware` feature (`devices` and `midi-io`):
+
+```rust,no_run
 use superb::primitives::session::TrackKind;
 use superb::primitives::{Result, SampleRate};
 use superb::{devices, record, session, track, transport};
@@ -19,6 +21,9 @@ fn main() -> Result<()> {
     }
     for d in devices::inputs()? {
         println!("{}{}", d.name, if d.is_default { " *" } else { "" });
+    }
+    for p in devices::midi_inputs()? {                    // MIDI ports, feature `midi-io`
+        println!("{}: {}", p.index, p.name);
     }
 
     devices::output(&mut session, None)?;                 // the default output drives the engine
@@ -35,14 +40,6 @@ fn main() -> Result<()> {
     devices::output(&mut session, Some("Headphones"))?;   // and moves to another device
     devices::close_input(&mut session)?;
     Ok(())
-}
-```
-
-MIDI ports, with `midi-io`:
-
-```rust
-for p in devices::midi_inputs()? {
-    println!("{}: {}", p.index, p.name);
 }
 ```
 
@@ -64,7 +61,8 @@ Every signature, argument, error and undo step: [devices reference](devices.ref.
 ## Notes
 
 * Streams are opened at the session's rate and block size for you; a
-  device that cannot do them is refused.
+  device that cannot do them is refused. A refusal costs nothing: the
+  session keeps its engine, so try another device or carry on without.
 * One input per session. Close it and open again to change device.
 * Device lists are a snapshot; list again after plugging something in.
 * While a device drives the engine, `render_blocks` is not available.

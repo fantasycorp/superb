@@ -22,7 +22,7 @@ the generated reference for each page.
 
 ## Example
 
-```rust
+```rust,no_run
 use superb::primitives::session::TrackKind;
 use superb::primitives::{Result, SampleRate, TimePosition};
 use superb::{clip, export, session, track, transport};
@@ -32,15 +32,16 @@ fn main() -> Result<()> {
     let mut session = session::create(std::env::temp_dir().join("demo"), rate, 256)?;
 
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
-    let take = session::import_audio(&mut session, "/music/take.wav")?;
-    clip::add(&mut session, vox, take.key, TimePosition::ZERO)?;
+    let vocal = session::import_audio(&mut session, "/music/vocal.wav")?;   // into audio/vocal.wav
+    clip::add(&mut session, vox, vocal.key, TimePosition::ZERO)?;
     track::volume(&mut session, vox, -6.0)?;
 
     transport::start(&mut session)?;
     let heard = session::steps::render_blocks(&mut session, 8)?;   // no sound card needed
     println!("peak {:.3}", heard.peak());
 
-    export::bounce(&mut session, "mix.wav", export::Bounce::default())?;
+    let mix = session::layout(&session).bounce("mix");               // bounces/mix.wav
+    export::bounce(&mut session, mix, export::Bounce::default())?;
     session::save(&mut session)?;
     Ok(())
 }
@@ -48,7 +49,7 @@ fn main() -> Result<()> {
 
 ## How it works
 
-```rust
+```rust,ignore
 pub struct Session {
     pub memory: Memory,              // tracks, clips, routing, tempo: what gets saved
     pub history: UndoStack<Memory>,  // every edit goes through here
@@ -76,7 +77,8 @@ pub struct Session {
   plays, otherwise at the next `transport::start` or `render_blocks`.
   Levels and state reach the live controls without a rebuild.
 * **Commands land at the next block.** `transport::state` right after
-  `transport::start` still says `Stopped`.
+  `transport::start` still says `Stopped`. The playhead is the exception:
+  after `transport::seek` it reads the new place at once.
 * **No hardware needed.** `session::steps::render_blocks` stands in for
   the sound card; `export` renders offline; `record::start` takes a queue
   you fill. The `devices` feature adds real outputs and inputs.

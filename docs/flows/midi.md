@@ -32,13 +32,27 @@ fn main() -> Result<()> {
 }
 ```
 
-A hardware keyboard, with the `midi-io` feature:
+A hardware keyboard, with the `hardware` feature:
 
-```rust
-for port in superb::devices::midi_inputs()? {
-    println!("{}: {}", port.index, port.name);
+```rust,no_run
+use superb::primitives::session::TrackKind;
+use superb::primitives::{Result, SampleRate};
+use superb::{devices, midi, session, track, transport};
+
+fn main() -> Result<()> {
+    let mut session = session::create(std::env::temp_dir().join("keyboard"), SampleRate::HZ_48K, 128)?;
+    let keys = track::add(&mut session, "keys", TrackKind::Midi)?;
+    track::monitor(&mut session, keys, true)?;
+
+    for port in devices::midi_inputs()? {
+        println!("{}: {}", port.index, port.name);
+    }
+    midi::connect_input(&mut session, 0)?;      // its notes play on every monitoring MIDI track
+    devices::output(&mut session, None)?;       // the speakers drive the engine
+    transport::start(&mut session)?;
+    std::thread::sleep(std::time::Duration::from_secs(10));   // play
+    Ok(())
 }
-midi::connect_input(&mut session, 0)?;   // its notes play on every monitoring MIDI track
 ```
 
 `cargo run --example midi_keys` runs both.

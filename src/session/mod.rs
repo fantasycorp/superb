@@ -36,14 +36,14 @@
 //! assert_eq!(session.memory.track(vox).unwrap().name, "vocals");
 //! session
 //!     .audio
-//!     .insert("takes/take 1.wav", PlanarBuffer::new(2, 50));
+//!     .insert("audio/vox 1.wav", PlanarBuffer::new(2, 50));
 //! let id = clip::add(
 //!     &mut session,
 //!     vox,
-//!     "takes/take 1.wav",
+//!     "audio/vox 1.wav",
 //!     TimePosition::from_samples(100),
 //! )?;
-//! assert_eq!(session.memory.clip(id).unwrap().name, "take 1");
+//! assert_eq!(session.memory.clip(id).unwrap().name, "vox 1");
 //! assert_eq!(
 //!     session.memory.clip(id).unwrap().length(),
 //!     TimeDuration::from_samples(50)

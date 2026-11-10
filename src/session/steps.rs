@@ -21,8 +21,8 @@
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //! let mut tone = PlanarBuffer::new(2, 400);
 //! tone.fill(0.5);
-//! session.audio.insert("tone.wav", tone);
-//! superb::clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! session.audio.insert("audio/tone.wav", tone);
+//! superb::clip::add(&mut session, vox, "audio/tone.wav", TimePosition::ZERO)?;
 //! transport::start(&mut session)?;
 //! let before = session::steps::render_blocks(&mut session, 2)?;
 //! assert!(before.peak() > 0.3);
