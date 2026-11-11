@@ -201,8 +201,10 @@ pub fn set_tempo(session: &mut Session, bpm: f64) -> Result<()>
 ```
 
 Sets the memory's tempo at the start. Consecutive changes are one undo step.
-MIDI clips are scheduled through the tempo map, so the mixer rebuilds, and
-the rebuild hands the engine the new map.
+A ramp that begins at the start (`tempo_change` at beat zero with
+`TempoChange::Ramp`) stays a ramp: this moves where it begins. MIDI clips
+are scheduled through the tempo map, so the mixer rebuilds, and the rebuild
+hands the engine the new map.
 
 **Takes**
 - `session: &mut Session` — the open session, borrowed mutably
@@ -214,7 +216,7 @@ the rebuild hands the engine the new map.
 
 **Undo** one undo step per drag: calls within `Session::COALESCE_WINDOW` (half a second) merge; rebuilds the mixer (at once while a device plays, otherwise at the next start).
 
-**Made of** `SetTempo` at beat 0 through `session::structural`.
+**Made of** `SetTempo` at beat 0 (`ramped` when the start already ramps) through `session::structural`.
 
 **Example**
 
@@ -225,32 +227,39 @@ session::set_tempo(&mut session, 100.0)?;
 ### `tempo_change`
 
 ```rust
-pub fn tempo_change(session: &mut Session, beat: BeatPosition, bpm: Option<f64>) -> Result<()>
+pub fn tempo_change( session: &mut Session, beat: BeatPosition, change: Option<TempoChange>, ) -> Result<()>
 ```
 
-Adds a tempo change at `beat` (`Some(bpm)`), or removes the one there
-(`None`); the tempo at beat zero is set with `set_tempo` and cannot be
-removed. Changes to the same beat coalesce. Rebuilds the mixer, which hands
-the engine the new map.
+Adds a tempo change at `beat`, or removes the one there (`None`).
+`TempoChange::Step(bpm)` holds that tempo until the next change;
+`TempoChange::Ramp(bpm)` starts there and glides to the tempo of the next
+change, so a ramp is two changes: where it begins and where it arrives. Beat
+zero takes a change like any other beat, which is how a session begins with
+a ramp; it cannot be removed. Changes to the same beat coalesce. The click,
+MIDI clips and the bar and beat grid all follow. Rebuilds the mixer, which
+hands the engine the new map.
 
 **Takes**
 - `session: &mut Session` — the open session, borrowed mutably
 - `beat: BeatPosition` — where the change takes effect, in quarter notes from the start
-- `bpm: Option<f64>` — `Some(bpm)` adds or changes the tempo there; `None` removes the change
+- `change: Option<TempoChange>` — `Some(TempoChange::Step(bpm))` holds that tempo until the next change; `Some(TempoChange::Ramp(bpm))` starts there and glides to the next change's tempo; `None` removes the change
 
 **Returns** `Result<()>` — nothing
 
-**Errors** a beat before zero; removing the change at beat zero (use `set_tempo`); removing a change that is not there.
+**Errors** a beat before zero; a tempo at or below zero; removing the change at beat zero; removing a change that is not there.
 
 **Undo** one step per beat; changes to the same beat coalesce; rebuilds the mixer (at once while a device plays, otherwise at the next start).
 
-**Made of** `SetTempo` or `RemoveTempo` through `session::structural`.
+**Made of** `SetTempo` (`ramped` for a ramp) or `RemoveTempo` through `session::structural`.
 
 **Example**
 
 ```rust
-session::tempo_change(&mut session, BeatPosition::new(16.0), Some(140.0))?;   // faster from bar 5
-session::tempo_change(&mut session, BeatPosition::new(16.0), None)?;          // and back
+session::tempo_change(&mut session, BeatPosition::new(16.0), Some(TempoChange::Step(140.0)))?;   // faster from bar 5
+session::tempo_change(&mut session, BeatPosition::new(16.0), None)?;                             // and back
+// A ramp is two changes: where it begins and where it arrives.
+session::tempo_change(&mut session, BeatPosition::ZERO, Some(TempoChange::Ramp(100.0)))?;        // from 100 at the start
+session::tempo_change(&mut session, BeatPosition::new(32.0), Some(TempoChange::Step(140.0)))?;   // gliding to 140 at bar 9
 ```
 
 ### `meter_change`

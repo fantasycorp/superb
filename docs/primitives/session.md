@@ -63,7 +63,7 @@ mixer they built).
   `SetTrackOutput`, `AddSend`, `RemoveSend`, `AddInsert`, `RemoveInsert`,
   `MoveInsert`, `AddClip`, `RemoveClip`, `ArchiveClip`, `MoveClip`,
   `ResizeClip`, `TrimClip`, `SplitClip`, `AddMarker`, `RemoveMarker`,
-  `MoveMarker`, `SetTempo` (`ramped()` for a ramp; no flow verb),
+  `MoveMarker`, `SetTempo` (`ramped()` for a ramp; `session::tempo_change` is the verb),
   `RemoveTempo`, `SetMeter`, `SetLoopRange`, `AddNote`, `RemoveNote`,
   `ChangeNote`, `SetPunch` (`PunchPoint::{In, Out}`).
   Property edits, which coalesce: `set_session_name`,

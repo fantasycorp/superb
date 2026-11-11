@@ -926,4 +926,56 @@ mod tests {
             "a structural edit does not put the default back"
         );
     }
+
+    #[test]
+    fn midi_notes_follow_a_tempo_ramp() {
+        use crate::primitives::transport::TempoChange;
+        let mut session = session::create(session::scratch("ramp-midi"), R, 64).unwrap();
+        session::tempo_change(
+            &mut session,
+            BeatPosition::ZERO,
+            Some(TempoChange::Ramp(120.0)),
+        )
+        .unwrap();
+        session::tempo_change(
+            &mut session,
+            BeatPosition::new(8.0),
+            Some(TempoChange::Step(60.0)),
+        )
+        .unwrap();
+        let keys = track::add(&mut session, "keys", TrackKind::Midi).unwrap();
+        let note = |beat: f64| MidiNote {
+            beat,
+            length: 0.5,
+            note: 60,
+            velocity: 100,
+            channel: 0,
+        };
+        let id = crate::clip::add(
+            &mut session,
+            keys,
+            vec![note(0.0), note(4.0), note(7.0)],
+            TimePosition::ZERO,
+        )
+        .unwrap();
+        let map = session.memory.tempo_map();
+        let clip = session.memory.clip(id).unwrap();
+        let ClipSource::Midi { notes } = &clip.source else {
+            panic!("a MIDI clip");
+        };
+        let ons: Vec<i64> = schedule_midi_notes(clip, notes, map)
+            .iter()
+            .filter(|e| e.on)
+            .map(|e| e.sample)
+            .collect();
+        let at = |beat: f64| map.beat_to_samples(BeatPosition::new(beat)).samples();
+        assert_eq!(ons, [at(0.0), at(4.0), at(7.0)]);
+        // Slowing down: beat 4 comes later than it would at a steady 120.
+        assert!(at(4.0) > 4 * 24_000);
+        assert_eq!(
+            clip.end().samples(),
+            at(7.5),
+            "the clip ends with its last note"
+        );
+    }
 }
