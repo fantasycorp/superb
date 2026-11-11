@@ -22,8 +22,8 @@
 //!     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //!     let mut tone = PlanarBuffer::new(2, 48_000);
 //!     tone.fill(0.5);
-//!     session.audio.insert("tone.wav", tone);
-//!     clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//!     session.audio.insert("audio/tone.wav", tone);
+//!     clip::add(&mut session, vox, "audio/tone.wav", TimePosition::ZERO)?;
 //!
 //!     transport::start(&mut session)?;
 //!     let heard = session::steps::render_blocks(&mut session, 8)?;
@@ -54,12 +54,12 @@ fn main() -> Result<()> {
     // 48 kHz, tempo 120. Starts with a master bus.
     let mut memory = Memory::new("session-steps", rate);
 
-    // Audio track. 0.5 s of 0.2, cached as "tone.wav". Clip at 0.25 s.
+    // Audio track. 0.5 s of 0.2, cached as "audio/tone.wav". Clip at 0.25 s.
     let vox = memory.add_track("vox", TrackKind::Audio);
     let mut tone = PlanarBuffer::new(2, 24_000);
     tone.fill(0.2);
     let mut cache = AudioCache::new();
-    cache.insert("tone.wav", tone);
+    cache.insert("audio/tone.wav", tone);
     memory.add_clip(
         vox,
         Clip::new(
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
             TimePosition::from_samples(12_000),
             TimeDuration::from_samples(24_000),
             ClipSource::Audio {
-                path: PathBuf::from("tone.wav"),
+                path: PathBuf::from("audio/tone.wav"),
                 offset: TimeDuration::ZERO,
             },
         )?,

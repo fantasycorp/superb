@@ -96,32 +96,43 @@ A few conventions hold on every page, so they are stated here once:
 
 `cargo doc --no-deps --open` builds the same text as rustdoc, with every
 signature linked. The same pages make up the documentation site that
-lives beside them in [docs/](docs/README.md): `cd docs && pnpm install &&
-pnpm dev` serves it. [docs/quick-start.md](docs/quick-start.md) is the task index.
-`/llms.txt` and `/llms-full.txt` publish that index, the generated flow
-references, the architecture, the terminology and the primitive contracts.
+lives beside them in [docs/](docs/README.md): `cd docs && bun install &&
+bun dev` serves it. [docs/quick-start.md](docs/quick-start.md) is the task index.
+
+Every Rust example in the Markdown is a whole program, and
+`cargo test --doc --features hardware,files` compiles them all.
+
+For an agent, `/llms.txt` is the index and `/llms-full.txt` is everything
+in one file, in reading order: the task index, each flow's page (a whole
+program) with its generated reference, the architecture, the terminology,
+the primitive contracts, the remaining work, and every example program in
+full.
 
 ## Quick start
 
 ```rust
 use superb::primitives::buffers::PlanarBuffer;
 use superb::primitives::session::TrackKind;
-use superb::primitives::{SampleRate, TimePosition};
+use superb::primitives::{Result, SampleRate, TimePosition};
 use superb::{clip, session, track, transport};
 
-let mut session = session::create("demo.superb", SampleRate::HZ_48K, 256)?;   // a folder
-let lead = track::add(&mut session, "lead", TrackKind::Audio)?;
+fn main() -> Result<()> {
+    let folder = std::env::temp_dir().join("demo");                    // a session is a folder
+    let mut session = session::create(&folder, SampleRate::HZ_48K, 256)?;
+    let lead = track::add(&mut session, "lead", TrackKind::Audio)?;
 
-// Audio lives in memory: a decoded file, or a buffer you made.
-let mut tone = PlanarBuffer::new(2, 48_000);
-tone.fill(0.25);
-session.audio.insert("tone.wav", tone);
-clip::add(&mut session, lead, "tone.wav", TimePosition::ZERO)?;     // as long as the audio
-track::volume(&mut session, lead, -6.0)?;
+    // Audio lives in memory: a decoded file, or a buffer you made.
+    let mut tone = PlanarBuffer::new(2, 48_000);
+    tone.fill(0.25);
+    session.audio.insert("audio/tone.wav", tone);
+    clip::add(&mut session, lead, "audio/tone.wav", TimePosition::ZERO)?;   // as long as the audio
+    track::volume(&mut session, lead, -6.0)?;
 
-transport::start(&mut session)?;                                   // builds the mixer, starts playing
-let audio = session::steps::render_blocks(&mut session, 8)?;       // 8 blocks, no audio device needed
-assert!(audio.peak() > 0.1);
+    transport::start(&mut session)?;                                   // builds the mixer, starts playing
+    let audio = session::steps::render_blocks(&mut session, 8)?;       // 8 blocks, no audio device needed
+    println!("peak {:.3}", audio.peak());                              // 0.088: −6 dB, −3 dB at centre
+    Ok(())
+}
 ```
 
 Every example is a short, commented program that runs without hardware
@@ -198,11 +209,11 @@ analysis (true peak, LUFS, loudness normalisation, lining two recordings
 up by their audio, silence) and dynamics (compressor, limiter, gate,
 de-esser, leveler).
 
-Not yet: a plugins flow, telling MIDI ports apart per track, loop
-recording, tempo ramps (a tempo that glides rather than steps), duplex
-device streams, aligning hardware MIDI timestamps with the audio clock,
-updating a running mixer incrementally (a rebuild replaces it), VST3
-hosting, SysEx and Standard MIDI Files, and encoders other than WAV.
+What is not built yet, and the order to build it in, is one list:
+[DESIGN.md](DESIGN.md). The largest gaps are inserts and plugins through
+the flows, automation in the session, loop recording, and encoders other
+than WAV. ARA 2 plugin support is proposed in
+[ARA2_DESIGN.md](ARA2_DESIGN.md) (shelved for now).
 
 ## Licence
 

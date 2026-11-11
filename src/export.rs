@@ -22,11 +22,11 @@
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //! let mut tone = PlanarBuffer::new(2, 1_000);
 //! tone.fill(0.5);
-//! session.audio.insert("tone.wav", tone);
+//! session.audio.insert("audio/tone.wav", tone);
 //! clip::add(
 //!     &mut session,
 //!     vox,
-//!     "tone.wav",
+//!     "audio/tone.wav",
 //!     TimePosition::from_samples(500),
 //! )?;
 //! let whole = export::bounce(&mut session, folder.join("session.wav"), export::Bounce::default())?;

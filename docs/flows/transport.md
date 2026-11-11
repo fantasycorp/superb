@@ -44,9 +44,19 @@ fn main() -> Result<()> {
 
 With the `devices` feature the same session plays through the speakers:
 
-```rust
-superb::devices::output(&mut session, None)?;   // the default output drives the engine from here
-transport::start(&mut session)?;
+```rust,no_run
+use superb::primitives::{Result, SampleRate};
+use superb::{devices, session, transport};
+
+fn main() -> Result<()> {
+    let folder = session::Root::default().folder("My Show");   // ~/superb/My Show/
+    let mut session = session::open(&folder, 256)?;
+    devices::output(&mut session, None)?;       // the default output drives the engine from here
+    transport::start(&mut session)?;
+    std::thread::sleep(std::time::Duration::from_secs(10));
+    transport::stop(&mut session)?;
+    Ok(())
+}
 ```
 
 `cargo run --example play_session` runs both.

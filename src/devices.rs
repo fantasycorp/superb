@@ -75,7 +75,8 @@ pub(crate) fn output_config(session: &Session, device: Option<&str>) -> OutputCo
 /// starts it. From then on the device drives the engine, structural edits
 /// rebuild the mixer at once, and
 /// [`session::steps::render_blocks`](crate::session::steps::render_blocks)
-/// is unavailable.
+/// is unavailable. A device that cannot be opened is an error and nothing
+/// else: the session keeps its engine and plays on without a device.
 ///
 /// Made of: an `OutputConfig` matching the session →
 /// [`session::steps::rebuild`](crate::session::steps::rebuild) when needed
@@ -95,7 +96,11 @@ pub fn output(session: &mut Session, device: Option<&str>) -> Result<()> {
             session.output = Some(output);
             Ok(())
         }
-        Err(e) => Err(e),
+        Err((audio_thread, error)) => {
+            // The device said no; the engine stays in the session.
+            session.audio_thread = Some(*audio_thread);
+            Err(error)
+        }
     }
 }
 
@@ -317,5 +322,16 @@ mod tests {
         let mut session = session;
         assert!(close_output(&mut session).is_err(), "nothing to close");
         assert!(session.audio_thread.is_some(), "the thread stays home");
+    }
+
+    #[test]
+    fn a_device_that_does_not_open_leaves_the_engine() {
+        let mut session =
+            session::create(session::scratch("nodev"), SampleRate::HZ_48K, 64).unwrap();
+        assert!(output(&mut session, Some("no such device, by design")).is_err());
+        assert!(session.output.is_none());
+        assert!(session.audio_thread.is_some(), "the thread came back");
+        let audio = session::steps::render_blocks(&mut session, 2).unwrap();
+        assert_eq!(audio.frames(), 128);
     }
 }

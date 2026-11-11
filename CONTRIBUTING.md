@@ -14,6 +14,7 @@ cargo test --features files                  # file decode / resample / bounce
 cargo test --features devices                # device layer (hardware tests are #[ignore])
 cargo test --features midi-io                # MIDI input bridge
 cargo test --no-default-features             # without the CLAP host
+cargo test --doc --features hardware,files   # every example in the Markdown
 cargo doc --no-deps --open                   # API docs
 ```
 
@@ -29,6 +30,7 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --features hardware -- -D warnings
 cargo test
+cargo test --doc --features hardware,files
 cargo doc --no-deps
 ```
 
@@ -188,8 +190,16 @@ request that adds unsafe elsewhere needs a very good reason.
   or change a verb, add or change its note there and rerun the script. Do
   not edit the `.ref.md` files. The human page opens with a full example,
   then a short verbs table and a link to the reference.
+* Every Rust example in `README.md`, `docs/flows.md` and `docs/flows/<flow>.md`
+  is a whole program with a `main`, never a fragment, and
+  `cargo test --doc --features hardware,files` compiles all of them
+  (`src/lib.rs` includes the pages as doctests). Fence one `rust,no_run`
+  when it needs a device or a file of the reader's; it is still compiled.
+  Audio keys are written as the session stores them: `audio/<name>.wav`.
+* What is not built is listed once, in `DESIGN.md`. Link to it; do not
+  keep a second list.
 * The documentation site (Fumadocs on Next.js) lives in `docs/` beside the
-  Markdown and is built from it: `cd docs && pnpm install && pnpm dev`
+  Markdown and is built from it: `cd docs && bun install && bun dev`
   turns `README.md`, the Markdown in `docs/`, `examples/README.md` and
   `CONTRIBUTING.md` into pages and serves them. Nothing under
   `docs/content/` is committed; edit the Markdown.
