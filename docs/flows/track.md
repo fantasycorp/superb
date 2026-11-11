@@ -82,5 +82,6 @@ Every signature, argument, error and undo step: [track reference](track.ref.md).
 * A monitoring MIDI track gets `MonoSynthNode`, a simple synth for hearing
   that MIDI arrives. Instrument plugins come later.
 * Monitoring an audio track needs the input open (`devices::input`).
-* Pan law is a live-strip setting, `StripParams::set_pan_law`: tracks
-  default to constant power, buses to balance.
+* Pan law is a live-strip setting, `StripParams::set_pan_law`
+  (`session.mixer.strip(track)`): tracks default to constant power, buses
+  to balance. It survives a rebuild; it is not saved.

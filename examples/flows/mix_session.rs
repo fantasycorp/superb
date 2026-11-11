@@ -43,9 +43,9 @@ fn main() -> Result<()> {
     // 4 s of DC 0.25 on both tracks. Balance pan so centre is unity.
     let mut tone = PlanarBuffer::new(2, rate.hz() as usize * 4);
     tone.fill(0.25);
-    session.audio.insert("tone.wav", tone);
+    session.audio.insert("audio/tone.wav", tone);
     for t in [vox, gtr] {
-        clip::add(&mut session, t, "tone.wav", TimePosition::ZERO)?;
+        clip::add(&mut session, t, "audio/tone.wav", TimePosition::ZERO)?;
     }
     transport::start(&mut session)?;
     for (_, strip) in &session.mixer.strips {

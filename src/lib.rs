@@ -6,7 +6,7 @@
 //! The crate has two tiers, so you always know what a call will do:
 //!
 //! * **Flows** are top-level modules named after everyday tasks:
-//!   [`session`], [`track`], [`clip`], [`transport`], [`send`], [`midi`],
+//!   [`session`], [`track`], [`clip`], [`marker`], [`transport`], [`send`], [`midi`],
 //!   [`record`], [`metronome`], [`export`] and [`devices`]. Each is a set of free functions over a
 //!   [`session::Session`] (its memory, undo history, audio and running engine), and every function's docs
 //!   end with a "Made of:" list of the primitive calls it performs, so you
@@ -37,8 +37,8 @@
 //! // Clips name audio held in memory: a decoded file, or a buffer you made.
 //! let mut tone = PlanarBuffer::new(2, 4_800);
 //! tone.fill(0.25);
-//! session.audio.insert("tone.wav", tone);
-//! clip::add(&mut session, lead, "tone.wav", TimePosition::ZERO)?;   // as long as the audio
+//! session.audio.insert("audio/tone.wav", tone);
+//! clip::add(&mut session, lead, "audio/tone.wav", TimePosition::ZERO)?;   // as long as the audio
 //! track::volume(&mut session, lead, -6.0)?;
 //!
 //! transport::start(&mut session)?;                    // builds the mixer, starts playing
@@ -86,6 +86,39 @@ pub mod send;
 pub mod session;
 pub mod track;
 pub mod transport;
+
+/// The examples in the Markdown pages, compiled and run as doctests, so a
+/// page cannot drift from the API: `cargo test --doc --features hardware,files`.
+/// They need every feature because the pages show devices and resampling.
+#[cfg(all(doctest, feature = "hardware", feature = "files"))]
+mod markdown_examples {
+    #[doc = include_str!("../README.md")]
+    mod readme {}
+    #[doc = include_str!("../docs/flows.md")]
+    mod flows_index {}
+    #[doc = include_str!("../docs/flows/session.md")]
+    mod session {}
+    #[doc = include_str!("../docs/flows/track.md")]
+    mod track {}
+    #[doc = include_str!("../docs/flows/clip.md")]
+    mod clip {}
+    #[doc = include_str!("../docs/flows/marker.md")]
+    mod marker {}
+    #[doc = include_str!("../docs/flows/transport.md")]
+    mod transport {}
+    #[doc = include_str!("../docs/flows/send.md")]
+    mod send {}
+    #[doc = include_str!("../docs/flows/midi.md")]
+    mod midi {}
+    #[doc = include_str!("../docs/flows/record.md")]
+    mod record {}
+    #[doc = include_str!("../docs/flows/metronome.md")]
+    mod metronome {}
+    #[doc = include_str!("../docs/flows/export.md")]
+    mod export {}
+    #[doc = include_str!("../docs/flows/devices.md")]
+    mod devices {}
+}
 
 #[cfg(test)]
 mod tests {

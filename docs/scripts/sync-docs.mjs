@@ -1,9 +1,10 @@
 // Writes content/docs/ from the Markdown in the repository: README.md,
 // the Markdown beside this site in docs/, examples/README.md and
-// CONTRIBUTING.md. The Markdown stays the source of truth; this makes it
+// CONTRIBUTING.md, plus one page per program under examples/ carrying its
+// whole source. The Markdown stays the source of truth; this makes it
 // MDX (frontmatter from the first heading, `<` and `{` escaped outside
-// code, links resolved to site routes) and lays out the sidebar. `pnpm dev`
-// and `pnpm build` run it first, and content/docs/ is not committed.
+// code, links resolved to site routes) and lays out the sidebar. `bun dev`
+// and `bun run build` run it first, and content/docs/ is not committed.
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
 
@@ -11,6 +12,13 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const OUT = resolve(import.meta.dirname, '../content/docs');
 
 const FLOWS = ['session', 'track', 'clip', 'marker', 'transport', 'send', 'midi', 'record', 'metronome', 'export', 'devices'];
+/** Every program under examples/<tier>/, by name: its source becomes a page. */
+const EXAMPLES = ['flows', 'primitives'].flatMap((tier) =>
+  readdirSync(join(ROOT, 'examples', tier))
+    .filter((f) => f.endsWith('.rs'))
+    .sort()
+    .map((f) => ({ tier, name: f.slice(0, -3), file: `examples/${tier}/${f}` })),
+);
 const PRIMITIVES = ['buffers', 'realtime', 'transport', 'midi', 'graph', 'dynamics', 'mixer', 'automation', 'analysis', 'undo', 'session', 'plugins', 'io'];
 
 /** [source relative to the repository root, page path under /docs, title override] */
@@ -24,18 +32,29 @@ const PAGES = [
   ...PRIMITIVES.map((p) => [`docs/primitives/${p}.md`, `primitives/${p}`]),
   ['docs/ARCHITECTURE.md', 'architecture', 'Architecture'],
   ['docs/TERMINOLOGY.md', 'terminology', 'Terminology'],
-  ['examples/README.md', 'examples', 'Examples'],
+  ['DESIGN.md', 'remaining-work', 'Remaining work'],
+  ['examples/README.md', 'examples/index', 'Examples'],
   ['CONTRIBUTING.md', 'contributing', 'Contributing'],
 ];
 
 const META = {
-  '': { title: 'Superb', pages: ['index', 'quick-start', 'flows', 'primitives', 'architecture', 'terminology', 'examples', 'contributing'] },
+  '': { title: 'Superb', pages: ['index', 'quick-start', 'flows', 'primitives', 'architecture', 'terminology', 'remaining-work', 'examples', 'contributing'] },
   flows: {
     title: 'Flows',
     defaultOpen: true,
     pages: ['index', ...FLOWS, '---Reference---', ...FLOWS.map((f) => `${f}.ref`)],
   },
   primitives: { title: 'Primitives', defaultOpen: true, pages: ['index', ...PRIMITIVES] },
+  examples: {
+    title: 'Examples',
+    pages: [
+      'index',
+      '---Flows---',
+      ...EXAMPLES.filter((e) => e.tier === 'flows').map((e) => e.name),
+      '---Primitives---',
+      ...EXAMPLES.filter((e) => e.tier === 'primitives').map((e) => e.name),
+    ],
+  },
 };
 
 const routeOf = new Map(PAGES.map(([src, page]) => [src, '/docs/' + page.replace(/\/?index$/, '')]));
@@ -100,7 +119,17 @@ for (const [src, page, title] of PAGES) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, convert(src, title));
 }
+// A page per example: the program as it is in the repository, which
+// `cargo test` builds, so what a reader (or an agent) copies compiles.
+for (const { tier, name, file } of EXAMPLES) {
+  const source = readFileSync(join(ROOT, file), 'utf8').trimEnd();
+  const front = [`title: ${JSON.stringify(name)}`, `description: ${JSON.stringify(`${file}, the whole program`)}`];
+  const body = `Run it with \`cargo run --example ${name}\` (see the [examples](/docs/examples) for the features some need).\n\n\`\`\`\`rust\n${source}\n\`\`\`\`\n`; // four ticks: the sources hold fences of their own
+  const out = join(OUT, 'examples', name + '.mdx');
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, `---\n${front.join('\n')}\n---\n${body}`);
+}
 for (const [dir, meta] of Object.entries(META)) {
   writeFileSync(join(OUT, dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
 }
-console.log(`sync-docs: ${PAGES.length} pages written to ${relative(process.cwd(), OUT)}`);
+console.log(`sync-docs: ${PAGES.length + EXAMPLES.length} pages written to ${relative(process.cwd(), OUT)}`);

@@ -3,11 +3,11 @@
   "version": "0.0.41",
   "private": true,
   "scripts": {
-    "build": "node scripts/sync-docs.mjs && next build",
-    "dev": "node scripts/sync-docs.mjs && next dev",
+    "build": "bun scripts/sync-docs.mjs && next build",
+    "dev": "bun scripts/sync-docs.mjs && next dev",
     "start": "next start",
     "types:check": "next typegen && tsc --noEmit",
-    "sync": "node scripts/sync-docs.mjs"
+    "sync": "bun scripts/sync-docs.mjs"
   },
   "dependencies": {
     "cn": "^0.4.0",
@@ -15,7 +15,7 @@
     "fumadocs-mdx": "15.4.6",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.16.2",
     "lucide-react": "^1.50.0",
-    "next": "16.3.8",
+    "next": "16.4.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
@@ -28,5 +28,6 @@
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
-  }
+  },
+  "packageManager": "bun@1.3.4"
 }

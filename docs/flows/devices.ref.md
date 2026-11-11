@@ -67,7 +67,9 @@ Plays the session through an output device (`None` for the default, or a
 name from `outputs`): moves the audio thread into a real output stream at
 the session's sample rate, block size and channel count, and starts it. From
 then on the device drives the engine, structural edits rebuild the mixer at
-once, and `session::steps::render_blocks` is unavailable.
+once, and `session::steps::render_blocks` is unavailable. A device that
+cannot be opened is an error and nothing else: the session keeps its engine
+and plays on without a device.
 
 **Takes**
 - `session: &mut Session` — the open session, borrowed mutably

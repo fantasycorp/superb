@@ -4,7 +4,7 @@ Bounce the session, or a range of it, to WAV; or every strip to its own file.
 
 ## Example
 
-```rust
+```rust,no_run
 use superb::export::{self, Bounce, Stems};
 use superb::primitives::buffers::PlanarBuffer;
 use superb::primitives::io::wav::WavFormat;

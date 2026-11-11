@@ -23,8 +23,8 @@
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //! let mut tone = PlanarBuffer::new(2, 400);
 //! tone.fill(0.5);
-//! session.audio.insert("tone.wav", tone);
-//! clip::add(&mut session, vox, "tone.wav", TimePosition::ZERO)?;
+//! session.audio.insert("audio/tone.wav", tone);
+//! clip::add(&mut session, vox, "audio/tone.wav", TimePosition::ZERO)?;
 //! transport::start(&mut session)?;
 //! let audio = session::steps::render_blocks(&mut session, 10)?;
 //! assert_eq!(audio.frames(), 640);
@@ -90,7 +90,7 @@ pub fn looping(session: &mut Session, on: bool) -> Result<()> {
 }
 
 /// Where the playhead is: the position after the last block the engine
-/// rendered.
+/// rendered, or where the last [`seek`] sent it if no block has run since.
 pub fn playhead(session: &Session) -> TimePosition {
     session.engine.position()
 }

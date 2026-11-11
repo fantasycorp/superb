@@ -6,7 +6,7 @@ Start a recording, stop it, get a clip on every armed track.
 
 From a real input, with the `devices` feature:
 
-```rust
+```rust,no_run
 use superb::primitives::session::{Input, TrackKind};
 use superb::primitives::{Result, SampleRate, TimePosition};
 use superb::{devices, record, session, track, transport};
@@ -38,17 +38,31 @@ fn main() -> Result<()> {
 Offline, from a queue you fill yourself:
 
 ```rust
+use superb::primitives::buffers::PlanarBuffer;
 use superb::primitives::io::capture::capture_queue;
+use superb::primitives::session::TrackKind;
+use superb::primitives::{Result, SampleRate};
+use superb::{record, session, track, transport};
 
-track::arm(&mut session, vox, true)?;
-transport::start(&mut session)?;
-let (mut mic, blocks) = capture_queue(1, 256, 64)?;
-record::start(&mut session, record::Source::Queue { blocks, channels: 1 })?;
-for (n, block) in my_blocks.iter().enumerate() {
-    mic.push(block, (n * 256) as u64 * 1_000_000 / rate.hz() as u64);
-    session::steps::render_blocks(&mut session, 1)?;     // renders and collects
+fn main() -> Result<()> {
+    let rate = SampleRate::HZ_48K;
+    let mut session = session::create(std::env::temp_dir().join("offline-take"), rate, 256)?;
+    let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
+    track::arm(&mut session, vox, true)?;
+    transport::start(&mut session)?;
+
+    let (mut mic, blocks) = capture_queue(1, 256, 64)?;         // one channel, blocks of 256 frames
+    record::start(&mut session, record::Source::Queue { blocks, channels: 1 })?;
+    let mut block = PlanarBuffer::new(1, 256);
+    block.fill(0.25);                                            // stands in for a microphone
+    for n in 0..100u64 {
+        mic.push(&block, n * 256 * 1_000_000 / rate.hz() as u64);   // when it was captured, in µs
+        session::steps::render_blocks(&mut session, 1)?;        // renders and collects
+    }
+    let clips = record::stop(&mut session)?;
+    println!("{} clip, {} frames", clips.len(), session.memory.clip(clips[0])?.length().samples());
+    Ok(())
 }
-let clips = record::stop(&mut session)?;
 ```
 
 `cargo run --example record_take` runs the offline version end to end.

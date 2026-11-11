@@ -11,7 +11,7 @@
 //! ```text
 //! let mut session = session::create(&folder, SampleRate::HZ_48K, 256)?;
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
-//! clip::add(&mut session, vox, "take.wav", TimePosition::ZERO)?;
+//! clip::add(&mut session, vox, "audio/take.wav", TimePosition::ZERO)?;
 //! session::save(&mut session)?;
 //! let again = session::open(&folder, 256)?;
 //! ```

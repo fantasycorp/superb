@@ -40,13 +40,13 @@ fn main() -> Result<()> {
             *s = 0.5 * (-6.0 * t).exp() * (t * 330.0 * core::f32::consts::TAU).sin();
         }
     }
-    session.audio.insert("pluck.wav", pluck);
+    session.audio.insert("audio/pluck.wav", pluck);
     // Three clips at 0, 0.5, 1.0 s.
     for n in 0..3 {
         clip::add(
             &mut session,
             vox,
-            "pluck.wav",
+            "audio/pluck.wav",
             TimePosition::from_seconds(0.5 * n as f64, rate),
         )?;
     }

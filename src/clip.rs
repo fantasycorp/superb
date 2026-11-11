@@ -26,15 +26,15 @@
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
 //! session
 //!     .audio
-//!     .insert("takes/take 1.wav", PlanarBuffer::new(2, 480));
+//!     .insert("audio/vox 1.wav", PlanarBuffer::new(2, 480));
 //! let id = clip::add(
 //!     &mut session,
 //!     vox,
-//!     "takes/take 1.wav",
+//!     "audio/vox 1.wav",
 //!     TimePosition::from_samples(100),
 //! )?;
 //! let placed = session.memory.clip(id).unwrap();
-//! assert_eq!(placed.name, "take 1");
+//! assert_eq!(placed.name, "vox 1");
 //! assert_eq!(placed.start().samples(), 100);
 //! assert_eq!(placed.length().samples(), 480);
 //! assert_eq!(session.memory.clip_track(id).unwrap(), vox);

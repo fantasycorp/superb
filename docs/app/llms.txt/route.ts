@@ -6,8 +6,10 @@ export async function GET() {
   const lines = [
     '# Superb',
     '',
-    'Task index, generated flow references, architecture, terminology and primitive contracts.',
-    'The short flow pages (examples, no signatures) are linked from each reference.',
+    'A Rust toolkit for building a DAW. Read in this order: the task index; each flow page',
+    '(a whole program) and its generated reference (every signature); the architecture and the',
+    'terminology; the primitive contracts; then every example program in full.',
+    '/llms-full.txt is all of it in one file.',
     '',
   ];
   for (const page of agentPages()) {
