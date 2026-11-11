@@ -189,8 +189,9 @@ their state, a master track that is always there, clips, markers and
 routing (tracks and clips are archived, never deleted), JSON files and
 undo; an opt-in state file for mute, solo, arm, monitor, inputs, looping,
 the click and the playhead; a mixer built from the memory with faders,
-buses and sends, swapped glitch-free into a running engine; tempo and
-meter changes the engine and the click follow; audio import in every
+buses and sends, swapped glitch-free into a running engine; tempo
+changes, stepped or ramped, and meter changes the engine and the click
+follow; audio import in every
 format the decoder reads, resampled once to the session's rate, with a
 report of what came in; clip split, trim, gain and fades; notes added,
 changed and removed in MIDI clips; an opinionated folder layout under a

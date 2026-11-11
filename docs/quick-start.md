@@ -14,7 +14,7 @@ the words.
 | where files go | `session::layout`, `Root`, `Layout` | [session](flows/session.ref.md) |
 | bring in an audio file | `session::import_audio`, then `clip::add` with `.key` | [session](flows/session.ref.md), [clip](flows/clip.ref.md) |
 | keep mute, solo, arm, the playhead | `session::state_file` | [session](flows/session.ref.md) |
-| tempo, a tempo change, a meter | `session::set_tempo`, `tempo_change`, `meter_change` | [session](flows/session.ref.md) |
+| tempo, a tempo change or ramp, a meter | `session::set_tempo`, `tempo_change` (`TempoChange::Step` / `Ramp`), `meter_change` | [session](flows/session.ref.md) |
 | a loop range | `session::set_loop`, then `transport::looping` | [session](flows/session.ref.md), [transport](flows/transport.ref.md) |
 | undo or redo | `session::undo`, `session::redo` | [session](flows/session.ref.md) |
 | a track | `track::add`; `archive` / `restore`; `rename`, `move_to`, `color` | [track](flows/track.ref.md) |
@@ -51,7 +51,6 @@ These exist in the crate. A session does not apply them for you.
 | automation | `primitives::automation`: `AutomationLane::apply_block`, `AutomationBank` | no. The memory does not own lanes |
 | a compressor, limiter, gate, de-esser or leveler | `primitives::graph::dynamics` | only if you place the node yourself |
 | loudness, true peak, an offset, silence | `primitives::analysis::{meter, offset, silence}` | `export::stems` reports loudness of each file. The meters are yours to call |
-| a tempo ramp | `commands::SetTempo::ramped` | no verb. `session::set_tempo` and `tempo_change` are steps, not ramps |
 | VST3 | `primitives::plugins::vst3` | `AVAILABLE` is `false`. Every call returns `unsupported()` |
 
 `Memory` is the data (`superb::primitives::session::Memory`). `Session` is

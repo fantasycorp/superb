@@ -69,7 +69,7 @@ use std::path::{Path, PathBuf};
 use crate::primitives::io::EngineCommand;
 use crate::primitives::session::commands::{RemoveTempo, SetLoopRange, SetMeter, SetTempo};
 use crate::primitives::session::Memory;
-use crate::primitives::transport::LoopRange;
+use crate::primitives::transport::{LoopRange, TempoChange};
 use crate::primitives::undo::Command;
 use crate::primitives::{BeatPosition, Result, SampleRate, SuperbError, TimeSignature, TrackId};
 
@@ -517,23 +517,43 @@ pub(crate) fn scratch(tag: &str) -> PathBuf {
 }
 
 /// Sets the memory's tempo at the start. Consecutive changes are one undo
-/// step. MIDI clips are scheduled through the tempo map, so the mixer
-/// rebuilds, and the rebuild hands the engine the new map.
+/// step. A ramp that begins at the start ([`tempo_change`] at beat zero
+/// with [`TempoChange::Ramp`]) stays a ramp: this moves where it begins.
+/// MIDI clips are scheduled through the tempo map, so the mixer rebuilds,
+/// and the rebuild hands the engine the new map.
 ///
-/// Made of: `SetTempo` at beat 0 through `session::structural`.
+/// Made of: `SetTempo` at beat 0 (`ramped` when the start already ramps)
+/// through `session::structural`.
 pub fn set_tempo(session: &mut Session, bpm: f64) -> Result<()> {
-    structural(session, SetTempo::new(BeatPosition::ZERO, bpm))
+    let ramps = session
+        .memory
+        .tempo_map()
+        .tempo_points()
+        .first()
+        .is_some_and(|start| start.ramp);
+    let command = SetTempo::new(BeatPosition::ZERO, bpm);
+    structural(session, if ramps { command.ramped() } else { command })
 }
 
-/// Adds a tempo change at `beat` (`Some(bpm)`), or removes the one there
-/// (`None`); the tempo at beat zero is set with [`set_tempo`] and cannot
-/// be removed. Changes to the same beat coalesce. Rebuilds the mixer,
-/// which hands the engine the new map.
+/// Adds a tempo change at `beat`, or removes the one there (`None`).
+/// `TempoChange::Step(bpm)` holds that tempo until the next change;
+/// `TempoChange::Ramp(bpm)` starts there and glides to the tempo of the
+/// next change, so a ramp is two changes: where it begins and where it
+/// arrives. Beat zero takes a change like any other beat, which is how a
+/// session begins with a ramp; it cannot be removed. Changes to the same
+/// beat coalesce. The click, MIDI clips and the bar and beat grid all
+/// follow. Rebuilds the mixer, which hands the engine the new map.
 ///
-/// Made of: `SetTempo` or `RemoveTempo` through `session::structural`.
-pub fn tempo_change(session: &mut Session, beat: BeatPosition, bpm: Option<f64>) -> Result<()> {
-    match bpm {
-        Some(bpm) => structural(session, SetTempo::new(beat, bpm)),
+/// Made of: `SetTempo` (`ramped` for a ramp) or `RemoveTempo` through
+/// `session::structural`.
+pub fn tempo_change(
+    session: &mut Session,
+    beat: BeatPosition,
+    change: Option<TempoChange>,
+) -> Result<()> {
+    match change {
+        Some(TempoChange::Step(bpm)) => structural(session, SetTempo::new(beat, bpm)),
+        Some(TempoChange::Ramp(bpm)) => structural(session, SetTempo::new(beat, bpm).ramped()),
         None => structural(session, RemoveTempo::new(beat)),
     }
 }
@@ -842,7 +862,12 @@ mod tests {
     fn tempo_and_meter_changes_are_edits_that_reach_the_engine() {
         let mut session = create(scratch("tempo_meter"), R, 64).unwrap();
         let steps = session.history.undo_len();
-        tempo_change(&mut session, BeatPosition::new(4.0), Some(240.0)).unwrap();
+        tempo_change(
+            &mut session,
+            BeatPosition::new(4.0),
+            Some(TempoChange::Step(240.0)),
+        )
+        .unwrap();
         meter_change(&mut session, 2, Some(TimeSignature::new(3, 4).unwrap())).unwrap();
         assert_eq!(session.history.undo_len(), steps + 2);
         assert_eq!(
@@ -1053,5 +1078,116 @@ mod tests {
             6_400,
             "the state file keeps it too"
         );
+    }
+
+    #[test]
+    fn a_tempo_ramp_is_two_changes_and_undoes() {
+        let mut session = create(scratch("ramp"), R, 64).unwrap();
+        // From 120 at the start, gliding to 60 at beat 4, held from there.
+        tempo_change(
+            &mut session,
+            BeatPosition::ZERO,
+            Some(TempoChange::Ramp(120.0)),
+        )
+        .unwrap();
+        tempo_change(
+            &mut session,
+            BeatPosition::new(4.0),
+            Some(TempoChange::Step(60.0)),
+        )
+        .unwrap();
+        let map = session.memory.tempo_map();
+        assert_eq!(map.tempo_at(BeatPosition::new(2.0)), 90.0, "half way");
+        assert_eq!(map.tempo_at(BeatPosition::new(6.0)), 60.0, "held after");
+        let seconds = map.beat_to_seconds(BeatPosition::new(4.0));
+        assert!(seconds > 2.0 && seconds < 4.0, "between all-120 and all-60");
+
+        // Moving the starting tempo leaves the start a ramp.
+        set_tempo(&mut session, 100.0).unwrap();
+        let start = session.memory.tempo_map().tempo_points()[0];
+        assert!(start.ramp && start.bpm == 100.0);
+
+        // A step at the same beat turns the ramp off; undo turns it back on.
+        session.history.seal();
+        tempo_change(
+            &mut session,
+            BeatPosition::ZERO,
+            Some(TempoChange::Step(100.0)),
+        )
+        .unwrap();
+        assert!(!session.memory.tempo_map().tempo_points()[0].ramp);
+        assert!(undo(&mut session).unwrap());
+        assert!(session.memory.tempo_map().tempo_points()[0].ramp);
+
+        // The start cannot be removed; the arrival can, and then nothing glides.
+        assert!(tempo_change(&mut session, BeatPosition::ZERO, None).is_err());
+        tempo_change(&mut session, BeatPosition::new(4.0), None).unwrap();
+        assert_eq!(
+            session.memory.tempo_map().tempo_at(BeatPosition::new(2.0)),
+            100.0
+        );
+    }
+
+    /// Where each click starts: the first sounding sample after silence.
+    fn click_onsets(audio: &PlanarBuffer) -> Vec<i64> {
+        let samples = audio.channel(0);
+        let mut onsets = Vec::new();
+        let mut quiet = 3_000; // longer than a click
+        for (i, s) in samples.iter().enumerate() {
+            if *s == 0.0 {
+                quiet += 1;
+            } else {
+                if quiet >= 3_000 {
+                    onsets.push(i as i64 - 1); // a click opens on a zero sample
+                }
+                quiet = 0;
+            }
+        }
+        onsets
+    }
+
+    #[test]
+    fn the_click_follows_a_tempo_ramp_beat_for_beat() {
+        // Large blocks and a steep ramp: the tempo moves inside every block.
+        let mut session = create(scratch("ramp-click"), R, 1_024).unwrap();
+        tempo_change(
+            &mut session,
+            BeatPosition::ZERO,
+            Some(TempoChange::Ramp(60.0)),
+        )
+        .unwrap();
+        tempo_change(
+            &mut session,
+            BeatPosition::new(64.0),
+            Some(TempoChange::Step(240.0)),
+        )
+        .unwrap();
+        crate::metronome::enable(&mut session, true).unwrap();
+        crate::transport::start(&mut session).unwrap();
+        let blocks = 1_400; // about half a minute
+        let audio = steps::render_blocks(&mut session, blocks).unwrap();
+
+        let map = session.memory.tempo_map();
+        let end = (blocks * 1_024) as i64;
+        let expected: Vec<i64> = (0..)
+            .map(|beat| {
+                map.beat_to_samples(BeatPosition::new(beat as f64))
+                    .samples()
+            })
+            .take_while(|at| *at < end - 1)
+            .collect();
+        let heard = click_onsets(&audio);
+        assert!(expected.len() > 60, "{} beats", expected.len());
+        assert_eq!(
+            heard.len(),
+            expected.len(),
+            "a click per beat, no more, no fewer"
+        );
+        for (heard, expected) in heard.iter().zip(&expected) {
+            assert!(
+                (heard - expected).abs() <= 1,
+                "click at {heard}, beat at {expected}"
+            );
+        }
     }
 }

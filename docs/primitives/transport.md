@@ -21,6 +21,8 @@ position and tempo.
   `remove_tempo`, `add_meter`, `remove_meter`.
 * `TempoPoint` / `MeterPoint` — a tempo (bpm from a beat, `ramp` flag) or
   meter (time signature from a bar) change point.
+* `TempoChange` — `Step(bpm)` or `Ramp(bpm)`: what `session::tempo_change`
+  takes, a tempo and how it travels to the next change.
 * `Bbt` — 1-based bar/beat, 0-based tick (`TICKS_PER_QUARTER` = 960 ticks per
   quarter note) position for display and grid snapping.
 * `Transport` — stopped/playing/recording state, sample-accurate position,

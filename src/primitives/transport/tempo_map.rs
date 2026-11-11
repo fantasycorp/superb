@@ -27,6 +27,27 @@ pub struct TempoPoint {
     seconds: f64,
 }
 
+/// A tempo from a beat on, and how it travels to the next change: what a
+/// tempo track's point is to a musician.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TempoChange {
+    /// This many quarter notes per minute, held until the next change.
+    Step(f64),
+    /// This many quarter notes per minute here, gliding in a straight line
+    /// (in bpm over beats) to the tempo of the next change. With no later
+    /// change there is nothing to glide to, and the tempo holds.
+    Ramp(f64),
+}
+
+impl TempoChange {
+    /// The tempo at the change itself.
+    pub fn bpm(&self) -> f64 {
+        match *self {
+            Self::Step(bpm) | Self::Ramp(bpm) => bpm,
+        }
+    }
+}
+
 /// Seconds elapsed from `p.beat` to `beat`, which lies in `p`'s segment
 /// (`next` is the following point, if any).
 fn seconds_in_segment(p: &TempoPoint, next: Option<&TempoPoint>, beat: f64) -> f64 {

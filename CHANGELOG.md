@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Nothing has been tagged yet. Everything below is what the first release,
 0.1.0, will hold.
 
+### Added
+
+- Tempo ramps through the flows: `session::tempo_change` takes
+  `TempoChange::Step(bpm)` or `TempoChange::Ramp(bpm)`, and a ramp can
+  begin at beat zero. The click and MIDI clips follow.
+
 ### Fixed
 
 - A device output that fails to open no longer loses the engine:
@@ -25,6 +31,9 @@ Nothing has been tagged yet. Everything below is what the first release,
 
 ### Changed
 
+- `session::tempo_change` takes `Option<TempoChange>` where it took
+  `Option<f64>`: `Some(120.0)` becomes `Some(TempoChange::Step(120.0))`.
+- `session::set_tempo` keeps a ramp that begins at the start.
 - `AudioThread::run_on_device` returns
   `Result<LiveOutput, (Box<AudioThread>, SuperbError)>`.
 - Every Rust example in the Markdown is a whole program, compiled by

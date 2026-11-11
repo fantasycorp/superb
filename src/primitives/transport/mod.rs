@@ -40,4 +40,4 @@ mod playhead;
 mod tempo_map;
 
 pub use playhead::{LoopRange, Segment, Segments, Transport, TransportSnapshot, TransportState};
-pub use tempo_map::{Bbt, MeterPoint, TempoMap, TempoPoint, TICKS_PER_QUARTER};
+pub use tempo_map::{Bbt, MeterPoint, TempoChange, TempoMap, TempoPoint, TICKS_PER_QUARTER};

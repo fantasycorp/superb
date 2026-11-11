@@ -6,7 +6,7 @@ Create, open and save a session; tempo, meter and loop range; undo.
 
 ```rust,no_run
 use superb::primitives::session::TrackKind;
-use superb::primitives::transport::LoopRange;
+use superb::primitives::transport::{LoopRange, TempoChange};
 use superb::primitives::{BeatPosition, Result, SampleRate, TimePosition, TimeSignature};
 use superb::session::Root;
 use superb::{clip, marker, session, track};
@@ -21,7 +21,9 @@ fn main() -> Result<()> {
     clip::add(&mut session, vox, vocal.key, TimePosition::ZERO)?;
 
     session::set_tempo(&mut session, 100.0)?;
-    session::tempo_change(&mut session, BeatPosition::new(16.0), Some(120.0))?;   // faster from bar 5
+    session::tempo_change(&mut session, BeatPosition::new(16.0), Some(TempoChange::Step(120.0)))?;   // faster from bar 5
+    session::tempo_change(&mut session, BeatPosition::new(32.0), Some(TempoChange::Ramp(120.0)))?;   // from bar 9, gliding
+    session::tempo_change(&mut session, BeatPosition::new(48.0), Some(TempoChange::Step(90.0)))?;    // down to 90 at bar 13
     session::meter_change(&mut session, 9, Some(TimeSignature::new(6, 8)?))?;     // 6/8 from bar 9
     let range = LoopRange::new(TimePosition::ZERO, TimePosition::from_seconds(8.0, rate))?;
     session::set_loop(&mut session, Some(range))?;
@@ -53,7 +55,7 @@ Run `cargo run --example new_session` for the same thing without a file on disk.
 | `import_audio(session, file) -> Imported` | decode a file into `audio/<name>.wav`; `clip::add` takes `.key` | — |
 | `state_file(session, Option<path>)` | where mute, solo, arm and the playhead are kept; unset, they are not saved | — |
 | `set_tempo(session, bpm)` | the tempo at the start | drag |
-| `tempo_change(session, beat, Option<bpm>)` | add or remove a tempo change | one |
+| `tempo_change(session, beat, Option<TempoChange>)` | add or remove a tempo change: `Step(bpm)` holds, `Ramp(bpm)` glides to the next change | one |
 | `meter_change(session, bar, Option<TimeSignature>)` | set or remove the meter from a bar | one |
 | `set_loop(session, Option<LoopRange>)` | the loop range; `transport::looping` turns it on | drag |
 | `undo(session) -> bool` / `redo(session) -> bool` | `false` when there is nothing to do | |
@@ -88,7 +90,11 @@ Every signature, argument, error and undo step: [session reference](session.ref.
 ## Notes
 
 * Beats are quarter notes whatever the meter: a 6/8 bar is three beats.
-  Tempo ramps have no verb yet (`SetTempo::ramped` is the command).
+* A ramp is two changes: `TempoChange::Ramp(bpm)` where it begins and any
+  change where it arrives. With nothing after it a ramp has nowhere to go
+  and holds. Beat zero takes a change too, so a session can begin with a
+  ramp; `set_tempo` then moves where it begins. The click, MIDI clips and
+  the grid follow; audio stays where it is.
 * `import_audio` resamples to the session's rate on the way in. With the
   `files` feature it reads WAV, AIFF, FLAC, ALAC, MP3, AAC, Ogg Vorbis, CAF
   and Matroska; without it, a WAV at the session's rate.
