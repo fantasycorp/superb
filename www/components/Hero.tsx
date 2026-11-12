@@ -4,27 +4,37 @@ import { useState } from "react";
 import { WaveLine } from "../app/wave-line";
 
 const GITHUB_URL = "https://github.com/superb-audio/superb-sdk";
-const INSTALL = "cargo add superb";
+const INSTALL = "cargo add superb --features devices";
 
-// The quick start: a session, a track, a buffer, then audio back with no
-// device. The assert is what gets copied; the page shows it as the result.
-const PROGRAM = `use superb::primitives::buffers::PlanarBuffer;
+// The quick start: make a sound, play it through the default output, bounce
+// it to a WAV. PROGRAM is what gets copied, a whole program; the page shows
+// its body and the file it leaves behind.
+const PROGRAM = `use std::{thread, time::Duration};
+use superb::export::{self, Bounce};
+use superb::primitives::buffers::PlanarBuffer;
 use superb::primitives::session::TrackKind;
-use superb::primitives::{SampleRate, TimePosition};
-use superb::{clip, session, track, transport};
+use superb::primitives::{Result, SampleRate, TimePosition};
+use superb::{clip, devices, session, track, transport};
 
-let mut session = session::create("demo.superb", SampleRate::HZ_48K, 256)?;
-let lead = track::add(&mut session, "lead", TrackKind::Audio)?;
+fn main() -> Result<()> {
+    let mut session = session::create("demo", SampleRate::HZ_48K, 256)?;
+    let lead = track::add(&mut session, "lead", TrackKind::Audio)?;
 
-let mut tone = PlanarBuffer::new(2, 48_000);
-tone.fill(0.25);
-session.audio.insert("tone.wav", tone);
-clip::add(&mut session, lead, "tone.wav", TimePosition::ZERO)?;
-track::volume(&mut session, lead, -6.0)?;
+    // Create one second of audio
+    let tone = PlanarBuffer::sine(440.0, 0.25, SampleRate::HZ_48K, 48_000);
+    session.audio.insert("audio/tone.wav", tone);
+    clip::add(&mut session, lead, "audio/tone.wav", TimePosition::ZERO)?;
 
-transport::start(&mut session)?;
-let audio = session::steps::render_blocks(&mut session, 8)?;
-assert!(audio.peak() > 0.1);`;
+    // Plays audio
+    devices::output(&mut session, None)?;
+    transport::start(&mut session)?;
+    // Waiting until audio is finished playing to bounce
+    thread::sleep(Duration::from_secs(1));
+
+    // Bounce as a .wav
+    export::bounce(&mut session, "demo/bounces/mix.wav", Bounce::default())?;
+    Ok(())
+}`;
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -113,112 +123,103 @@ export function Hero() {
             <pre className="pre">
               <code>
                 {[
-                  <Tok key="k1" kind="kw">use</Tok>,
-                  " superb::primitives::buffers::",
-                  <Tok key="t1" kind="ty">PlanarBuffer</Tok>,
-                  ";\n",
-                  <Tok key="k2" kind="kw">use</Tok>,
-                  " superb::primitives::session::",
-                  <Tok key="t2" kind="ty">TrackKind</Tok>,
-                  ";\n",
-                  <Tok key="k3" kind="kw">use</Tok>,
-                  " superb::primitives::{",
-                  <Tok key="t3" kind="ty">SampleRate</Tok>,
-                  ", ",
-                  <Tok key="t4" kind="ty">TimePosition</Tok>,
-                  "};\n",
-                  <Tok key="k4" kind="kw">use</Tok>,
-                  " superb::{clip, session, track, transport};\n\n",
-                  <Tok key="k5" kind="kw">let</Tok>,
+                  <Tok key="x1" kind="kw">let</Tok>,
                   " ",
-                  <Tok key="k6" kind="kw">mut</Tok>,
+                  <Tok key="x2" kind="kw">mut</Tok>,
                   " session = session::",
-                  <Tok key="f1" kind="fn">create</Tok>,
+                  <Tok key="x3" kind="fn">create</Tok>,
                   "(",
-                  <Tok key="s1" kind="str">&quot;demo.superb&quot;</Tok>,
+                  <Tok key="x4" kind="str">&quot;demo&quot;</Tok>,
                   ", ",
-                  <Tok key="t5" kind="ty">SampleRate</Tok>,
+                  <Tok key="x5" kind="ty">SampleRate</Tok>,
                   "::",
-                  <Tok key="c1" kind="const">HZ_48K</Tok>,
+                  <Tok key="x6" kind="const">HZ_48K</Tok>,
                   ", ",
-                  <Tok key="n1" kind="num">256</Tok>,
+                  <Tok key="x7" kind="num">256</Tok>,
                   ")?;\n",
-                  <Tok key="k7" kind="kw">let</Tok>,
+                  <Tok key="x8" kind="kw">let</Tok>,
                   " lead = track::",
-                  <Tok key="f2" kind="fn">add</Tok>,
+                  <Tok key="x9" kind="fn">add</Tok>,
                   "(",
-                  <Tok key="op1" kind="op">&amp;mut</Tok>,
+                  <Tok key="x10" kind="op">&amp;mut</Tok>,
                   " session, ",
-                  <Tok key="s2" kind="str">&quot;lead&quot;</Tok>,
+                  <Tok key="x11" kind="str">&quot;lead&quot;</Tok>,
                   ", ",
-                  <Tok key="t6" kind="ty">TrackKind</Tok>,
+                  <Tok key="x12" kind="ty">TrackKind</Tok>,
                   "::",
-                  <Tok key="c2" kind="const">Audio</Tok>,
+                  <Tok key="x13" kind="const">Audio</Tok>,
                   ")?;\n\n",
-                  <Tok key="k8" kind="kw">let</Tok>,
-                  " ",
-                  <Tok key="k9" kind="kw">mut</Tok>,
+                  <span key="x14" className="meta">{"// Create one second of audio"}</span>,
+                  "\n",
+                  <Tok key="x15" kind="kw">let</Tok>,
                   " tone = ",
-                  <Tok key="t7" kind="ty">PlanarBuffer</Tok>,
+                  <Tok key="x16" kind="ty">PlanarBuffer</Tok>,
                   "::",
-                  <Tok key="f3" kind="fn">new</Tok>,
+                  <Tok key="x17" kind="fn">sine</Tok>,
                   "(",
-                  <Tok key="n2" kind="num">2</Tok>,
+                  <Tok key="x18" kind="num">440.0</Tok>,
                   ", ",
-                  <Tok key="n3" kind="num">48_000</Tok>,
-                  ");\n",
-                  "tone.",
-                  <Tok key="f4" kind="fn">fill</Tok>,
-                  "(",
-                  <Tok key="n4" kind="num">0.25</Tok>,
-                  ");\n",
-                  "session.audio.",
-                  <Tok key="f5" kind="fn">insert</Tok>,
-                  "(",
-                  <Tok key="s3" kind="str">&quot;tone.wav&quot;</Tok>,
-                  ", tone);\n",
-                  "clip::",
-                  <Tok key="f6" kind="fn">add</Tok>,
-                  "(",
-                  <Tok key="op2" kind="op">&amp;mut</Tok>,
-                  " session, lead, ",
-                  <Tok key="s4" kind="str">&quot;tone.wav&quot;</Tok>,
+                  <Tok key="x19" kind="num">0.25</Tok>,
                   ", ",
-                  <Tok key="t8" kind="ty">TimePosition</Tok>,
+                  <Tok key="x20" kind="ty">SampleRate</Tok>,
                   "::",
-                  <Tok key="c3" kind="const">ZERO</Tok>,
-                  ")?;\n",
-                  "track::",
-                  <Tok key="f7" kind="fn">volume</Tok>,
+                  <Tok key="x21" kind="const">HZ_48K</Tok>,
+                  ", ",
+                  <Tok key="x22" kind="num">48_000</Tok>,
+                  ");\nsession.audio.",
+                  <Tok key="x23" kind="fn">insert</Tok>,
                   "(",
-                  <Tok key="op3" kind="op">&amp;mut</Tok>,
+                  <Tok key="x24" kind="str">&quot;audio/tone.wav&quot;</Tok>,
+                  ", tone);\nclip::",
+                  <Tok key="x25" kind="fn">add</Tok>,
+                  "(",
+                  <Tok key="x26" kind="op">&amp;mut</Tok>,
                   " session, lead, ",
-                  <Tok key="n5" kind="num">-6.0</Tok>,
+                  <Tok key="x27" kind="str">&quot;audio/tone.wav&quot;</Tok>,
+                  ", ",
+                  <Tok key="x28" kind="ty">TimePosition</Tok>,
+                  "::",
+                  <Tok key="x29" kind="const">ZERO</Tok>,
                   ")?;\n\n",
-                  "transport::",
-                  <Tok key="f8" kind="fn">start</Tok>,
+                  <span key="x30" className="meta">{"// Plays audio"}</span>,
+                  "\ndevices::",
+                  <Tok key="x31" kind="fn">output</Tok>,
                   "(",
-                  <Tok key="op4" kind="op">&amp;mut</Tok>,
-                  " session)?;\n",
-                  <Tok key="k10" kind="kw">let</Tok>,
-                  " audio = session::steps::",
-                  <Tok key="f9" kind="fn">render_blocks</Tok>,
-                  "(",
-                  <Tok key="op5" kind="op">&amp;mut</Tok>,
+                  <Tok key="x32" kind="op">&amp;mut</Tok>,
                   " session, ",
-                  <Tok key="n6" kind="num">8</Tok>,
-                  ")?;\n\n",
-                  <Tok key="m1" kind="mac">assert!</Tok>,
-                  "(audio.",
-                  <Tok key="f10" kind="fn">peak</Tok>,
-                  "() > ",
-                  <Tok key="n7" kind="num">0.1</Tok>,
-                  ");\n",
+                  <Tok key="x33" kind="const">None</Tok>,
+                  ")?;\ntransport::",
+                  <Tok key="x34" kind="fn">start</Tok>,
+                  "(",
+                  <Tok key="x35" kind="op">&amp;mut</Tok>,
+                  " session)?;\n",
+                  <span key="x36" className="meta">{"// Waiting until audio is finished playing to bounce"}</span>,
+                  "\nthread::",
+                  <Tok key="x37" kind="fn">sleep</Tok>,
+                  "(",
+                  <Tok key="x38" kind="ty">Duration</Tok>,
+                  "::",
+                  <Tok key="x39" kind="fn">from_secs</Tok>,
+                  "(",
+                  <Tok key="x40" kind="num">1</Tok>,
+                  "));\n\n",
+                  <span key="x41" className="meta">{"// Bounce as a .wav"}</span>,
+                  "\nexport::",
+                  <Tok key="x42" kind="fn">bounce</Tok>,
+                  "(",
+                  <Tok key="x43" kind="op">&amp;mut</Tok>,
+                  " session, ",
+                  <Tok key="x44" kind="str">&quot;demo/bounces/mix.wav&quot;</Tok>,
+                  ", ",
+                  <Tok key="x45" kind="ty">Bounce</Tok>,
+                  "::",
+                  <Tok key="x46" kind="fn">default</Tok>,
+                  "())?;\n\n",
                   <span key="mark" className="answerMark">&gt;</span>,
                   " ",
-                  <span key="answer" className="answer">peak &gt; 0.1</span>,
+                  <span key="answer" className="answer">demo/bounces/mix.wav</span>,
                   "\n  ",
-                  <span key="meta" className="meta">8 blocks, no sound card</span>,
+                  <span key="meta" className="meta">1 s of A440, heard, then bounced</span>,
                 ]}
               </code>
             </pre>

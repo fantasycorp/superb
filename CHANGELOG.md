@@ -45,6 +45,7 @@ Nothing has been tagged yet. Everything below is what the first release,
 
 ### Added
 
+- **Test tone**: `PlanarBuffer::sine` makes one channel of a sine at a frequency and level, audio for a session without a file
 - **Core Architecture**: Two-tier design with flows (high-level API) and primitives (engine)
 - **Session Management**: Create, open, save sessions with JSON persistence and undo history
 - **Tracks**: Audio, MIDI, and bus tracks with volume, pan, mute, solo, arm, monitor, input, and MIDI channel

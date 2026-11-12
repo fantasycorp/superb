@@ -1,6 +1,6 @@
 //! Planar (non-interleaved) audio block.
 
-use crate::primitives::{Result, SuperbError};
+use crate::primitives::{Result, SampleRate, SuperbError};
 
 use crate::primitives::buffers::ChannelLayout;
 
@@ -68,6 +68,29 @@ impl PlanarBuffer {
             buf.channel_mut(ch).copy_from_slice(plane);
         }
         Ok(buf)
+    }
+
+    /// A test tone: `frames` of a sine at `frequency` Hz, peaking at
+    /// `amplitude` (linear, 1.0 is full scale), starting at phase zero.
+    /// One channel; a mono clip plays on every channel of its track.
+    ///
+    /// ```
+    /// use superb::primitives::buffers::PlanarBuffer;
+    /// use superb::primitives::SampleRate;
+    ///
+    /// // One second of A440 at a quarter of full scale.
+    /// let tone = PlanarBuffer::sine(440.0, 0.25, SampleRate::HZ_48K, 48_000);
+    /// assert_eq!((tone.channels(), tone.frames()), (1, 48_000));
+    /// assert!((tone.peak() - 0.25).abs() < 1e-3);
+    /// ```
+    pub fn sine(frequency: f32, amplitude: f32, sample_rate: SampleRate, frames: usize) -> Self {
+        let mut buf = Self::new(1, frames);
+        let cycles_per_frame = frequency as f64 / sample_rate.hz() as f64;
+        for (i, s) in buf.channel_mut(0).iter_mut().enumerate() {
+            let phase = (i as f64 * cycles_per_frame).fract();
+            *s = (phase * core::f64::consts::TAU).sin() as f32 * amplitude;
+        }
+        buf
     }
 
     /// Number of channels.
@@ -399,6 +422,32 @@ mod tests {
         assert_eq!(b.peak(), 0.0);
         assert_eq!(b.rms(), 0.0);
         assert_eq!(b.layout(), ChannelLayout::Stereo);
+    }
+
+    #[test]
+    fn sine_is_one_channel_at_the_asked_frequency_and_level() {
+        // A quarter of the sample rate: 0, +a, 0, -a, repeating.
+        let b = PlanarBuffer::sine(12_000.0, 0.5, SampleRate::HZ_48K, 8);
+        assert_eq!(b.channels(), 1);
+        assert_eq!(b.frames(), 8);
+        for (got, want) in b
+            .channel(0)
+            .iter()
+            .zip([0.0, 0.5, 0.0, -0.5].iter().cycle())
+        {
+            assert!((got - want).abs() < 1e-6, "{got} vs {want}");
+        }
+
+        // A whole number of cycles: peak is the amplitude, RMS is it over √2.
+        let second = PlanarBuffer::sine(440.0, 0.25, SampleRate::HZ_48K, 48_000);
+        assert!((second.peak() - 0.25).abs() < 1e-4);
+        assert!((second.rms() - 0.25 / 2f32.sqrt()).abs() < 1e-4);
+
+        assert_eq!(
+            PlanarBuffer::sine(440.0, 0.25, SampleRate::CD, 0).frames(),
+            0
+        );
+        assert!(PlanarBuffer::sine(440.0, 0.0, SampleRate::CD, 64).is_silent());
     }
 
     #[test]

@@ -17,7 +17,9 @@ real-time callback needs.
 
 * `PlanarBuffer` — one contiguous `f32` slice per channel; supports
   `set_frames`, gain/ramp, mix (`add_from`/`add_channel_from`), and metering
-  (`peak`, `rms`, `channel_peaks`).
+  (`peak`, `rms`, `channel_peaks`). `PlanarBuffer::sine` makes a test tone:
+  one channel of a sine at a frequency and level, for audio to put in a
+  session without a file.
 * `InterleavedBuffer` — frame-major `[ch0, ch1, ...]` storage used at the
   device boundary.
 * `ChannelLayout` — `Mono` / `Stereo` / `Multi(u16)`, normalised via
@@ -53,7 +55,7 @@ assert!(block.is_silent());
 
 ## Real-time notes
 
-`PlanarBuffer::new`/`InterleavedBuffer::new`/`resize_capacity` allocate (they
+`PlanarBuffer::new`/`PlanarBuffer::sine`/`InterleavedBuffer::new`/`resize_capacity` allocate (they
 call `vec![0.0; ...]`) and must run off the audio thread during setup.
 Everything used per block — `set_frames`, `channel`/`channel_mut`, `clear`,
 `fill`, `apply_gain`, `apply_gain_ramp`, `copy_from`, `add_from`,

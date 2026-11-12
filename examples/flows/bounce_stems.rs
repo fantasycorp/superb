@@ -65,10 +65,7 @@ fn main() -> Result<()> {
         ("music", 440.0, 0.2),
     ] {
         let frames = rate.hz() as usize; // a second each
-        let mut tone = PlanarBuffer::new(1, frames);
-        for (i, s) in tone.channel_mut(0).iter_mut().enumerate() {
-            *s = level * (core::f32::consts::TAU * hz * i as f32 / rate.hz() as f32).sin();
-        }
+        let tone = PlanarBuffer::sine(hz, level, rate, frames);
         session.audio.insert(format!("audio/{name}.wav"), tone);
     }
     clip::add(&mut session, host, "audio/host.wav", TimePosition::ZERO)?;
