@@ -4,10 +4,21 @@
   --surface: #fff;
   --panel: #f4f3f2;
   --carbon: #000;
-  --muted: #767676;
-  --faint: #8a8a8a;
+  --muted: #657b83;
+  --faint: #93a1a1;
   --rule: #c8c8c8;
-  --string: #0a3069;
+  --bright-red: #ff1a1a;
+  --maroon: #800000;
+  --kw: #ff1a1a;
+  --fn: #800000;
+  --ty: #ff1a1a;
+  --const: #800000;
+  --num: #ff1a1a;
+  --mac: #800000;
+  --str: #ff1a1a;
+  --op: #800000;
+  --answer: #ff1a1a;
+  --meta: #586e75;
 }
 
 html,
@@ -53,23 +64,14 @@ a {
 }
 
 .wordmark {
-  position: absolute;
-  top: 22px;
-  left: 28px;
-  margin: 0;
+  margin: 0 0 12px;
   font-family: var(--font-radwave), sans-serif;
   font-weight: 400;
-  font-size: 22px;
+  font-size: 40px;
   line-height: 1;
   letter-spacing: 0.06em;
-}
-
-.wave {
-  display: block;
-  align-self: stretch;
-  width: auto;
-  height: 44px;
-  margin: 2px calc(var(--pad-x) * -1) 18px;
+  color: #000;
+  text-align: center;
 }
 
 .stack {
@@ -85,17 +87,8 @@ a {
   line-height: 1.5;
   letter-spacing: -0.01em;
   text-align: center;
-  margin: 0 0 10px;
-}
-
-.subtitle {
-  font-size: 12px;
-  line-height: 1.7;
-  letter-spacing: -0.01em;
-  color: var(--muted);
-  text-align: center;
   margin: 0 0 28px;
-  max-width: 42ch;
+  max-width: 56ch;
 }
 
 .block {
@@ -139,16 +132,47 @@ a {
   color: var(--faint);
 }
 
-.str {
-  color: var(--string);
+.tok-kw {
+  color: var(--kw);
+  font-weight: 600;
+}
+
+.tok-fn {
+  color: var(--fn);
+}
+
+.tok-ty {
+  color: var(--ty);
+}
+
+.tok-const {
+  color: var(--const);
+}
+
+.tok-num {
+  color: var(--num);
+}
+
+.tok-mac {
+  color: var(--mac);
+  font-weight: 600;
+}
+
+.tok-str {
+  color: var(--str);
+}
+
+.tok-op {
+  color: var(--op);
 }
 
 .answer {
-  color: var(--carbon);
+  color: var(--answer);
+  font-weight: 600;
 }
 
 .meta {
-  color: var(--muted);
+  color: var(--meta);
 }
 
 .copy {
@@ -176,26 +200,36 @@ a {
 .links {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
 }
 
 .docs {
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   font-family: system-ui, sans-serif;
   font-size: 13px;
   letter-spacing: 0.02em;
   color: var(--carbon);
   text-decoration: none;
   white-space: nowrap;
-  border-bottom: 1px solid var(--rule);
-  padding-bottom: 3px;
-  transition: border-color 0.15s ease;
+  padding-bottom: 0;
+  width: fit-content;
 }
 
-.docs:hover {
-  border-bottom-color: var(--carbon);
+.docsLabel {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+}
+
+.docsWave {
+  display: block;
+  width: 0;
+  min-width: 100%;
+  height: 8px;
 }
 
 .arrow {
@@ -212,16 +246,34 @@ a {
   align-items: center;
   color: var(--faint);
   transition: color 0.15s ease;
+  margin-bottom: 10px;
 }
 
 .iconLink:hover {
   color: var(--carbon);
 }
 
-.iconLink svg {
+.iconSpin {
+  display: inline-flex;
+}
+
+.iconSpin svg {
   width: 16px;
   height: 16px;
   display: block;
+}
+
+.iconLink:hover .iconSpin svg {
+  animation: spin-record 1.8s linear infinite;
+}
+
+@keyframes spin-record {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .copyright {
@@ -238,6 +290,10 @@ a {
   .arrow {
     transition: none;
   }
+
+  .iconLink:hover .iconSpin svg {
+    animation: none;
+  }
 }
 
 @media (max-width: 600px) {
@@ -247,9 +303,7 @@ a {
   }
 
   .wordmark {
-    top: 16px;
-    left: 20px;
-    font-size: 18px;
+    font-size: 32px;
   }
 
   .block {
