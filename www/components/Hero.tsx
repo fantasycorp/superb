@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { WaveLine } from "../app/wave-line";
 
-const GITHUB_URL = "https://github.com/superb-audio/superb-sdk";
+const GITHUB_URL = "https://github.com/fantasycorp/superb";
 const INSTALL = "cargo add superb --features devices";
 
 // The quick start: make a sound, play it through the default output, bounce

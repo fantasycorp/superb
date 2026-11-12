@@ -67,8 +67,8 @@ const MAX_CHANNELS: usize = 64;
 
 const HOST_NAME: &CStr = c"Superb SDK";
 const HOST_VENDOR: &CStr = c"Superb";
-const HOST_URL: &CStr = c"https://github.com/superb-audio/superb-sdk";
-const HOST_VERSION: &CStr = c"0.1.0";
+const HOST_URL: &CStr = c"https://github.com/fantasycorp/superb";
+const HOST_VERSION: &CStr = c"0.1.1";
 
 fn msg(text: impl Into<String>) -> SuperbError {
     SuperbError::Message(text.into())
