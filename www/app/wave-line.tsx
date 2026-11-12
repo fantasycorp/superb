@@ -129,7 +129,7 @@ export function WaveLine({
         ref={pathRef}
         d={`M0 ${height / 2} H2000`}
         fill="none"
-        stroke="#000"
+        stroke="currentColor"
         strokeWidth="1"
       />
     </svg>

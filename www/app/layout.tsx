@@ -15,9 +15,8 @@ const berkeleyMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Superb — a DAW engine, in one crate",
-  description:
-    "Sessions, tracks, clips and a mixer, rendered with no device and no interface.",
+  title: "Superb — A fully-featured audio SDK written in Rust",
+  description: "Create your own DAW in a few lines of code.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
