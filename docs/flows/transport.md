@@ -30,7 +30,7 @@ fn main() -> Result<()> {
     session::steps::render_blocks(&mut session, 1)?;            // commands apply at the next block
 
     let range = LoopRange::new(TimePosition::from_seconds(0.5, rate), TimePosition::from_seconds(1.0, rate))?;
-    session::set_loop(&mut session, Some(range))?;
+    session::loop_range(&mut session, Some(range))?;
     transport::looping(&mut session, true)?;                    // state: saved, not an undo step
     transport::seek(&mut session, range.start())?;
     session::steps::render_blocks(&mut session, 141)?;          // 0.75 s inside a 0.5 s loop
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
 | `stop(session)` | |
 | `seek(session, to)` | move the playhead, stopped or rolling |
 | `rewind(session)` | seek to zero |
-| `looping(session, on)` | loop the range from `session::set_loop`; state |
+| `looping(session, on)` | loop the range from `session::loop_range`; state |
 | `playhead(session) -> TimePosition` | |
 | `state(session) -> TransportState` | `Stopped`, `Playing` or `Recording` |
 

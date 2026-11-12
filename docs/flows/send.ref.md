@@ -91,10 +91,10 @@ other are one undo step.
 send::level(&mut session, s, -6.0)?;
 ```
 
-### `enable`
+### `on`
 
 ```rust
-pub fn enable(session: &mut Session, send: SendId, on: bool) -> Result<()>
+pub fn on(session: &mut Session, send: SendId, on: bool) -> Result<()>
 ```
 
 Switches a send on or off. State, like mute: saved, heard at the next block,
@@ -116,6 +116,6 @@ not an undo step.
 **Example**
 
 ```rust
-send::enable(&mut session, s, false)?;
+send::on(&mut session, s, false)?;
 ```
 

@@ -37,8 +37,8 @@ not in memory, when there are no notes, or when the track is a bus.
 **Example**
 
 ```rust
-let take = session::import_audio(&mut session, "/music/take.wav")?;
-let c = clip::add(&mut session, vox, take.key, TimePosition::from_seconds(4.0, rate))?;
+let lead = session::import_audio(&mut session, "/music/lead.wav")?;
+let c = clip::add(&mut session, vox, lead.key, TimePosition::from_seconds(4.0, rate))?;
 let m = clip::add(&mut session, keys, vec![MidiNote { beat: 0.0, length: 1.0, note: 60, velocity: 100, channel: 0 }], TimePosition::ZERO)?;
 ```
 

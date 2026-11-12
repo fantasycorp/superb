@@ -61,7 +61,7 @@ if found.confidence > 0.5 {
 }
 
 // Dead air of a quarter second or more under -60 dBFS.
-for range in silence::stretches(&take, db_to_linear(-60.0), rate.hz() as usize / 4) { /* cut */ }
+for range in silence::stretches(&recorded, db_to_linear(-60.0), rate.hz() as usize / 4) { /* cut */ }
 ```
 
 `examples/primitives/measure_loudness.rs` runs all of this.

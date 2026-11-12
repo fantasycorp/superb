@@ -21,16 +21,16 @@ fn main() -> Result<()> {
     let mut audio = PlanarBuffer::new(2, rate.hz() as usize);
     audio.fill(0.2);
     session.audio.insert("audio/vox 1.wav", audio);
-    let take = clip::add(&mut session, vox, "audio/vox 1.wav", TimePosition::ZERO)?;   // as long as the audio
+    let lead = clip::add(&mut session, vox, "audio/vox 1.wav", TimePosition::ZERO)?;   // as long as the audio
 
-    clip::move_to(&mut session, take, vox, TimePosition::from_seconds(0.5, rate))?;
-    let tail = clip::split(&mut session, take, TimePosition::from_seconds(1.0, rate))?;   // take | tail
+    clip::move_to(&mut session, lead, vox, TimePosition::from_seconds(0.5, rate))?;
+    let tail = clip::split(&mut session, lead, TimePosition::from_seconds(1.0, rate))?;   // lead | tail
     clip::trim(&mut session, tail, TimePosition::from_seconds(1.1, rate), TimePosition::from_seconds(1.4, rate))?;
-    clip::gain(&mut session, take, -3.0)?;
-    clip::fade_in(&mut session, take, TimeDuration::from_seconds(0.05, rate))?;
+    clip::gain(&mut session, lead, -3.0)?;
+    clip::fade_in(&mut session, lead, TimeDuration::from_seconds(0.05, rate))?;
     clip::fade_out(&mut session, tail, TimeDuration::from_seconds(0.2, rate))?;
     clip::mute(&mut session, tail, true)?;          // state, like a track's mute
-    clip::rename(&mut session, take, "verse")?;
+    clip::rename(&mut session, lead, "verse")?;
     clip::archive(&mut session, tail)?;             // silent, still in the session
     session::undo(&mut session)?;                   // back on the timeline
 

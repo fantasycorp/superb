@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let vox_room = send::add(&mut session, vox, room, -6.0, SendTap::PostFader)?;
     let gtr_room = send::add(&mut session, gtr, room, -6.0, SendTap::PreFader)?;
     send::level(&mut session, vox_room, -12.0)?;      // heard at once; one undo step per drag
-    send::enable(&mut session, gtr_room, false)?;     // state: saved, not an undo step
+    send::on(&mut session, gtr_room, false)?;     // state: saved, not an undo step
     track::volume(&mut session, room, -3.0)?;         // a bus is a track
 
     transport::start(&mut session)?;
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
 | `add(session, track, bus, level_db, SendTap) -> SendId` | `SendTap::PostFader` or `PreFader` | one |
 | `remove(session, send)` | | one |
 | `level(session, send, db)` | heard at once | drag |
-| `enable(session, send, on)` | heard at once | state |
+| `on(session, send, on)` | heard at once | state |
 
 Every signature, argument, error and undo step: [send reference](send.ref.md).
 

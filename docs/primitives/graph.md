@@ -10,7 +10,7 @@ The audio process graph of the Superb DAW SDK.
 `BlockTime::from_transport`. It defines the `Node` trait every processor
 implements and `AudioGraph`, which owns nodes and edges, compiles a
 topological schedule, allocates all buffers up front in `prepare`, and then
-runs `process` with no heap activity. `primitives::mixer` builds its console
+runs `process` with no heap activity. `primitives::mixer` is built
 on this layer and the block loop in `primitives::io` drives it.
 
 ## Key types
@@ -213,6 +213,19 @@ Protocol and ownership:
 
 See `examples/live_graph_edit` for three generations swapped into a running
 block loop with printed peaks.
+
+## What a node keeps across a swap
+
+A published graph replaces the running one whole, so every node is built
+again. A node that holds something which cannot be built again, such as a
+loaded plugin, says so through `Node::carry`: it returns a key and the
+place it holds the thing in, an `Option<Box<dyn Any + Send>>`. Just before
+`LiveGraph` swaps the graphs it calls `AudioGraph::adopt_from`, which moves
+what each outgoing node carries into the incoming node with the same key
+whose place is empty. This runs on the audio thread and only moves
+pointers. A carried thing no incoming node asks for stays in the outgoing
+graph and is freed with it on the control thread.
+`tests/plugin_handover_no_alloc.rs` proves it with `PluginNode`.
 
 ## Latency compensation
 

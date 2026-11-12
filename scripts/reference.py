@@ -15,8 +15,8 @@ ROOT = pathlib.Path(".")
 FLOWS = [
     ("session", ["src/session/mod.rs", "src/session/folder.rs"]), ("track", "src/track.rs"), ("clip", "src/clip.rs"),
     ("marker", "src/marker.rs"), ("transport", "src/transport.rs"), ("send", "src/send.rs"),
-    ("midi", "src/midi.rs"), ("record", "src/record.rs"), ("metronome", "src/metronome.rs"),
-    ("export", "src/export.rs"), ("devices", "src/devices.rs"),
+    ("midi", "src/midi.rs"), ("record", ["src/record/mod.rs", "src/record/recovery.rs", "src/record/capture.rs"]), ("metronome", "src/metronome.rs"),
+    ("export", "src/export.rs"), ("devices", "src/devices.rs"), ("insert", "src/insert.rs"), ("plugin", "src/plugin.rs"),
 ]
 
 def methods_of(lines, name):
@@ -150,19 +150,19 @@ note("session::layout", returns="the session folder's `Layout`: `memory()`, `sta
      example='let layout = session::layout(&session);\nexport::bounce(&mut session, layout.bounce("rough mix"), Bounce::default())?;   // bounces/rough mix.wav\nsession::state_file(&mut session, Some(layout.state()))?;')
 note("session::import_audio", returns="an `Imported`: the key (`audio/<name>.wav`) a clip refers to the audio by, the file's own sample rate and bit depth, channels, frames, and whether it was resampled",
      errors="the file cannot be read or decoded; without the `files` feature, anything but a WAV at the session's rate",
-     undo=NONE + "; placing the clip with `clip::add` is the undo step", example='let take = session::import_audio(&mut session, "/music/take.flac")?;\nprintln!("{take}");   // audio/take.wav: 44100 Hz, 24-bit, 2 channel(s), resampled to 48000 Hz, stored as 32-bit float\nclip::add(&mut session, vox, take.key, TimePosition::ZERO)?;',
+     undo=NONE + "; placing the clip with `clip::add` is the undo step", example='let vox = session::import_audio(&mut session, "/music/vox.flac")?;\nprintln!("{vox}");   // audio/vox.wav: 44100 Hz, 24-bit, 2 channel(s), resampled to 48000 Hz, stored as 32-bit float\nclip::add(&mut session, vox, take.key, TimePosition::ZERO)?;',
      file="the audio file to bring in; WAV, AIFF, FLAC, ALAC, MP3, AAC (MP4/M4A), Ogg Vorbis, CAF or Matroska with the `files` feature")
 note("session::state_file", returns="nothing", errors="the file exists but cannot be read, is malformed or was written by a newer version; the file cannot be written",
      undo=NONE, example='session::state_file(&mut session, Some(session.folder.join("state.json")))?;   // read now, written from here on\nsession::state_file(&mut session, None)?;                                            // stop writing; the file stays',
      path="`Some(path)`: keep state there, reading it now if it exists; `None`: stop keeping state")
-note("session::set_tempo", returns="nothing", errors="a tempo at or below zero", undo=DRAG + REB, example="session::set_tempo(&mut session, 100.0)?;")
+note("session::tempo", returns="nothing", errors="a tempo at or below zero", undo=DRAG + REB, example="session::tempo(&mut session, 100.0)?;")
 note("session::tempo_change", returns="nothing", errors="a beat before zero; a tempo at or below zero; removing the change at beat zero; removing a change that is not there",
      undo="one step per beat; changes to the same beat coalesce" + REB, example="session::tempo_change(&mut session, BeatPosition::new(16.0), Some(TempoChange::Step(140.0)))?;   // faster from bar 5\nsession::tempo_change(&mut session, BeatPosition::new(16.0), None)?;                             // and back\n// A ramp is two changes: where it begins and where it arrives.\nsession::tempo_change(&mut session, BeatPosition::ZERO, Some(TempoChange::Ramp(100.0)))?;        // from 100 at the start\nsession::tempo_change(&mut session, BeatPosition::new(32.0), Some(TempoChange::Step(140.0)))?;   // gliding to 140 at bar 9",
      beat="where the change takes effect, in quarter notes from the start", change="`Some(TempoChange::Step(bpm))` holds that tempo until the next change; `Some(TempoChange::Ramp(bpm))` starts there and glides to the next change's tempo; `None` removes the change")
 note("session::meter_change", returns="nothing", errors="bar 0; removing the meter at bar 1; removing a change that is not there", undo=ONE + REB,
      example="session::meter_change(&mut session, 9, Some(TimeSignature::new(6, 8)?))?;",
      bar="the 1-based bar the new meter starts at", signature="`Some(signature)` sets the meter from that bar on; `None` removes the change there")
-note("session::set_loop", returns="nothing", errors="a range whose end is not after its start", undo=DRAG, example="session::set_loop(&mut session, Some(LoopRange::new(TimePosition::ZERO, TimePosition::from_seconds(8.0, rate))?))?;\ntransport::looping(&mut session, true)?;",
+note("session::loop_range", returns="nothing", errors="a range whose end is not after its start", undo=DRAG, example="session::loop_range(&mut session, Some(LoopRange::new(TimePosition::ZERO, TimePosition::from_seconds(8.0, rate))?))?;\ntransport::looping(&mut session, true)?;",
      range="`Some(range)` sets the loop range, told to the engine at once; `None` clears it")
 note("session::undo", returns="`true` when a step was undone, `false` when there was nothing to undo", errors="a command fails to revert (should not happen)", undo="this is the undo",
      example="if session::undo(&mut session)? { println!(\"undid {:?}\", session.history.redo_label()); }")
@@ -195,7 +195,7 @@ note("track::peak", returns="`Some([left, right])` as linear amplitude since the
 
 # ---- clip ----
 note("clip::add", returns="the new clip's id", errors="audio not in `session.audio` under that key; no notes; a bus", undo=ONE + REB,
-     example='let take = session::import_audio(&mut session, "/music/take.wav")?;\nlet c = clip::add(&mut session, vox, take.key, TimePosition::from_seconds(4.0, rate))?;\nlet m = clip::add(&mut session, keys, vec![MidiNote { beat: 0.0, length: 1.0, note: 60, velocity: 100, channel: 0 }], TimePosition::ZERO)?;',
+     example='let lead = session::import_audio(&mut session, "/music/lead.wav")?;\nlet c = clip::add(&mut session, vox, lead.key, TimePosition::from_seconds(4.0, rate))?;\nlet m = clip::add(&mut session, keys, vec![MidiNote { beat: 0.0, length: 1.0, note: 60, velocity: 100, channel: 0 }], TimePosition::ZERO)?;',
      content="audio: the key the audio is held under in `session.audio` (`&str`, `String`, `PathBuf`), from `session::import_audio` or a recording; MIDI: a `Vec<MidiNote>` with beats from the clip start")
 note("clip::move_to", returns="nothing", errors="an unknown clip or track; a bus", undo=DRAG + REB, example="clip::move_to(&mut session, c, vox, TimePosition::from_seconds(8.0, rate))?;   // same track, later\nclip::move_to(&mut session, c, gtr, TimePosition::from_seconds(8.0, rate))?;   // another track",
      track="the track to put it on; its own to move in time only")
@@ -238,7 +238,40 @@ note("send::add", returns="the new send's id", errors="an unknown track or bus; 
      bus="the bus track that receives the copy", level_db="the send level in decibels", tap="`SendTap::PostFader` (after the strip's fader and pan) or `SendTap::PreFader` (before)")
 note("send::remove", returns="nothing", errors="an unknown send", undo=ONE + REB, example="send::remove(&mut session, s)?;")
 note("send::level", returns="nothing", errors="an unknown send", undo=DRAG + "; the live send hears it at once", example="send::level(&mut session, s, -6.0)?;")
-note("send::enable", returns="nothing", errors="an unknown send", undo=STATE + "; the live send hears it at once", example="send::enable(&mut session, s, false)?;")
+note("send::on", returns="nothing", errors="an unknown send", undo=STATE + "; the live send hears it at once", example="send::on(&mut session, s, false)?;")
+
+# ---- insert ----
+COMMON["insert"] = "the insert's id, from `insert::add` or `track.inserts()`"
+note("insert::add", returns="the new insert's id", errors="an unknown track", undo=ONE + REB,
+     example="let comp = insert::add(&mut session, vox, Effect::Compressor)?;",
+     track="the track, bus or master (`session.memory.master().id()`) whose chain gets the effect",
+     effect="`Effect::Compressor`, `Limiter`, `Gate`, `DeEsser` or `Leveler`; `Effect::Plugin(PluginRef)` is stored but not heard")
+note("insert::remove", returns="nothing", errors="an unknown insert", undo=ONE + REB + "; undo puts it back at its place with its parameters", example="insert::remove(&mut session, comp)?;")
+note("insert::move_to", returns="nothing", errors="an unknown insert; an index past the end of the chain", undo=ONE + REB, example="insert::move_to(&mut session, comp, 0)?;   // first in the chain",
+     index="the place in the track's chain; `0` is the first effect the signal meets")
+note("insert::param", returns="nothing", errors="an unknown insert; a parameter the effect does not have (`Effect::params` lists them); a value that is not finite", undo=DRAG + "; the running effect hears it at once",
+     example="insert::param(&mut session, comp, EffectParam::Threshold, -24.0)?;\ninsert::param(&mut session, comp, EffectParam::Ratio, 4.0)?;",
+     param="which control: `EffectParam::Threshold`, `Ratio`, `Attack`, `Release`, `Knee`, `Makeup`, `Ceiling`, `Hold`, `Range`, `Frequency`, `Target`, `Speed`, `Floor`",
+     value="in the parameter's unit: dB for levels, milliseconds for times, Hz for a frequency, `n` of `n:1` for a ratio")
+note("insert::bypass", returns="nothing", errors="an unknown insert", undo=STATE + REB, example="insert::bypass(&mut session, comp, true)?;",
+     on="`true` to bypass, `false` to put it back in circuit")
+note("insert::reduction", returns="dB taken off at the end of the last block (zero or more; a leveler that is turning the signal up reads below zero), or `None` when the insert is not in the mixer", errors="", undo="",
+     example="if let Some(db) = insert::reduction(&session, comp) {\n    println!(\"-{db:.1} dB\");\n}")
+
+# ---- plugin ----
+note("plugin::scan", returns="a descriptor per plugin found: name, vendor, id, features and the bundle's path. Empty when none is installed", errors="", undo="",
+     example="for p in plugin::scan() {\n    println!(\"{} ({})\", p.name, p.vendor);\n}")
+note("plugin::params", returns="one `ParamInfo` per parameter, in the plugin's order: `id`, `name`, `min`, `max`, `default`", errors="an unknown insert; an insert that is not a plugin; a plugin that could not be loaded (the error says why)", undo=NONE,
+     example="for p in plugin::params(&mut session, verb)? {\n    println!(\"{} {}\", p.id, p.name);\n}")
+note("plugin::param", returns="nothing", errors="an unknown insert or parameter; a value outside the parameter's `min..=max` or not finite; a plugin that could not be loaded", undo=DRAG + "; the running plugin gets the value at its next block, and an undo sends the old one",
+     example="plugin::param(&mut session, verb, mix.id, 0.3)?;",
+     param="the parameter's id, from `plugin::params`", value="a plain value inside the parameter's range")
+note("plugin::value", returns="the parameter's value as the plugin reports it now", errors="an unknown insert or parameter; a plugin that could not be loaded; a format that cannot be read while it runs", undo=NONE,
+     example="let wet = plugin::value(&mut session, verb, mix.id)?;", param="the parameter's id, from `plugin::params`")
+note("plugin::changes", returns="each `PluginChange` the plugin reported since the last call, in order: `Touched { id }`, `Value { id, value }`, `Released { id }`. Empty when it changed nothing", errors="an unknown insert; an insert that is not a plugin; a plugin that could not be loaded", undo=DRAG + ", for each value the plugin reports; the value is not sent back to the plugin, and an undo sends the one before",
+     example="for change in plugin::changes(&mut session, verb)? {\n    if let PluginChange::Value { id, value } = change {\n        println!(\"{id} is now {value}\");\n    }\n}")
+note("plugin::missing", returns="each plugin insert whose plugin is not loaded, with the error the loader gave", errors="", undo="",
+     example="for (insert, why) in plugin::missing(&session) {\n    println!(\"{insert:?}: {why}\");\n}")
 
 # ---- midi ----
 note("midi::play_note", returns="nothing", errors="a channel above 15, a note or velocity above 127; the MIDI queue is full", undo=NONE, example="midi::play_note(&mut session, 0, 60, 100)?;   // middle C on channel 1",
@@ -265,7 +298,7 @@ note("record::recover", returns="the ids of the clips placed, one per unfinished
      example="let placed = record::recover(&mut session)?;   // after session::open noted unfinished recordings")
 
 # ---- metronome ----
-note("metronome::enable", returns="nothing", errors="never", undo=STATE + "; heard at the next block", example="metronome::enable(&mut session, true)?;")
+note("metronome::on", returns="nothing", errors="never", undo=STATE + "; heard at the next block", example="metronome::on(&mut session, true)?;")
 note("metronome::level", returns="nothing", errors="never", undo=DRAG + "; heard at once", example="metronome::level(&mut session, -12.0)?;")
 note("metronome::count_in", returns="nothing", errors="never", undo=STATE, example="metronome::count_in(&mut session, 2)?;   // two bars of click before a recording at the playhead", bars="bars of click before a recording that starts at the playhead; `0` for none")
 

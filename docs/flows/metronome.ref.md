@@ -7,10 +7,10 @@ The short page, with the examples, is [metronome](metronome.md).
 
 Every function of the `metronome` flow: what it takes, what it returns, what it refuses, and how it undoes. A `Result<T>` is `Ok(T)` or a `SuperbError`; the errors listed are the ones you can cause.
 
-### `enable`
+### `on`
 
 ```rust
-pub fn enable(session: &mut Session, on: bool) -> Result<()>
+pub fn on(session: &mut Session, on: bool) -> Result<()>
 ```
 
 Turns the click on or off. State, like mute: saved with the session, heard
@@ -31,7 +31,7 @@ at the next block, not an undo step.
 **Example**
 
 ```rust
-metronome::enable(&mut session, true)?;
+metronome::on(&mut session, true)?;
 ```
 
 ### `level`

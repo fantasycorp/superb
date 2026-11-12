@@ -11,8 +11,8 @@ at [quick-start.md](quick-start.md) to pick a function.
 
 The root of `superb::primitives` is the bottom of the engine: every other
 module depends on it, and it depends on nothing else in the crate. Everything
-here is `Copy`-friendly (except the rarely-used `SuperbError::Message(String)`
-variant) and safe to touch on the audio thread — it defines the vocabulary
+here is `Copy`-friendly (except the `SuperbError` variants that carry a
+path, a name or a message) and safe to touch on the audio thread — it defines the vocabulary
 (time, sample rates, IDs, errors) that the rest of the SDK builds on, but does
 no scheduling, buffering or I/O itself.
 
@@ -60,7 +60,8 @@ assert!(b > a);
 ## Real-time notes
 
 Every type here is stack-only (`Vec`/`String`-free except
-`SuperbError::Message`, which is only ever constructed off the audio thread)
+the `SuperbError` variants that carry a path or a message, which are only
+ever constructed off the audio thread)
 so arithmetic on `TimePosition`, `BeatPosition`, `SampleRate` etc. never
 allocates. `IdGenerator::next_raw` is a single lock-free `AtomicU64::fetch_add`
 (`src/primitives/ids.rs`, proven single-threaded and cross-thread by

@@ -16,7 +16,7 @@ and connects them deliberately.
 
 ```text
  flows (free functions over a Session)
- session · track · clip · marker · transport · send · midi · record · metronome · export · devices
+ session · track · clip · marker · transport · send · insert · plugin · midi · record · metronome · export · devices
  ─────────────────────────────────────────────────────────────────────
  primitives
    memory side (UI thread)             engine side (audio thread)
@@ -84,7 +84,7 @@ Data crosses the thread boundary in exactly three ways:
 1. **`primitives::session`** holds the `Memory` as plain data: tracks
    (audio, MIDI or bus) with their state (volume, pan, mute, solo, arm,
    monitor, input), clips on tracks, markers, a tempo map, loop range, routing
-   (each track's output bus and its sends) and insert chains (plugin,
+   (each track's output bus and its sends) and insert chains (effect,
    state, preset). It knows nothing about audio
    threads, so it can be cloned, saved as JSON and undone freely. Edits go
    through `primitives::undo` commands, which restore removed objects under
@@ -237,17 +237,38 @@ scheduling, silence, MIDI routing and latency compensation treat them like
 built-ins. The CLAP host is the only FFI in the SDK; every unsafe block
 states its invariant, and the host is tested against an in-process plugin
 so no shared library is needed. `start_processing` is deferred to the
-first `process` and `stop_processing` to `deactivate`. The memory stores a
-plugin reference, parameter values and saved preset on an `Insert`.
-`session::steps::rebuild` does not load those inserts or reapply their
-values. There is no plugins flow. A caller who wants a plugin in the
-signal path loads it and places a `PluginNode`, or calls
-`Mixer::add_insert` on a mixer they built themselves.
+first `process` and `stop_processing` to `deactivate`. The memory stores
+an `Insert` per effect: which one, its parameter values and a plugin's
+saved preset. `session::steps::rebuild` builds the built-in effects
+(`graph::dynamics`) onto their strips with those values; the `insert`
+flow edits them.
+
+**Plugins in a session.** A plugin insert is loaded once, by
+`Session::plugin_loader`, and its instance then lives in the running
+mixer. A rebuild does not load it again. The new mixer gets a
+`PluginNode::adopting` under the insert's id, and when the audio thread
+swaps the graphs it moves the instance from the old node to the new one
+(`Node::carry`, `AudioGraph::adopt_from`): a pointer move between two
+blocks, with no allocation, no lock and no block of dry signal, proven by
+`tests/plugin_handover_no_alloc.rs`. The control side keeps a
+`session::plugins::LoadedPlugin`: the descriptor, the parameters, and a
+`PluginControl`, the plugin's main-thread side, through which a value is
+read and the state saved while the instance processes. A parameter goes
+to the plugin through its node's queue, as a `ParamChange` that lands on
+a frame inside the block (CLAP events are timed; the host keeps its
+event list in time order without allocating). What the plugin changes
+itself comes back on a second queue, which travels with the instance
+across hand-overs: `plugin::changes` reads it, and puts each value into
+the memory as an edit. `session::save` writes each plugin's state to
+`plugins/<insert id>.state`, beside `memory.json` and not inside it. An instance whose insert is no
+longer in the mixer is left in the retired graph and freed with it on
+the control thread, after its state has been written into the memory.
 
 **Rebuild.** A rebuild builds a whole new mixer and swaps it in; it never
 edits the running one. That keeps the audio thread's contract simple at
-the cost of resetting meters, and plugin tails when that mixer contains
-plugins. A pan law set on a live strip is carried over to the track's
+the cost of resetting meters and the built-in effects' envelopes. Plugin
+instances are the exception: they are handed from the old mixer to the
+new one at the swap. A pan law set on a live strip is carried over to the track's
 new strip; nothing else set on a handle alone is. Structural edits trigger it themselves: at once while a device
 drives the engine, otherwise at the next start or render. Level edits and
 state changes do not rebuild because they go to the live handles directly.
@@ -273,5 +294,5 @@ but Rust. The CLAP host (`clap`) is on by default and can be turned off.
 ## Not there yet
 
 [../DESIGN.md](../DESIGN.md) is the one list of what is not built and the
-order to build it in. ARA 2 plugin support is proposed in
-[../ARA2_DESIGN.md](../ARA2_DESIGN.md) (shelved for now).
+order to build it in. ARA 2 plugin support is designed in
+[../ARA2_DESIGN.md](../ARA2_DESIGN.md) and follows the plugins flow.

@@ -11,7 +11,7 @@ import { dirname, join, posix, relative, resolve } from 'node:path';
 const ROOT = resolve(import.meta.dirname, '../..');
 const OUT = resolve(import.meta.dirname, '../content/docs');
 
-const FLOWS = ['session', 'track', 'clip', 'marker', 'transport', 'send', 'midi', 'record', 'metronome', 'export', 'devices'];
+const FLOWS = ['session', 'track', 'clip', 'marker', 'transport', 'send', 'insert', 'plugin', 'midi', 'record', 'metronome', 'export', 'devices'];
 /** Every program under examples/<tier>/, by name: its source becomes a page. */
 const EXAMPLES = ['flows', 'primitives'].flatMap((tier) =>
   readdirSync(join(ROOT, 'examples', tier))

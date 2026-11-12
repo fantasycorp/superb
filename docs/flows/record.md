@@ -13,7 +13,7 @@ use superb::{devices, record, session, track, transport};
 
 fn main() -> Result<()> {
     let rate = SampleRate::HZ_48K;
-    let mut session = session::create(std::env::temp_dir().join("take"), rate, 256)?;
+    let mut session = session::create(std::env::temp_dir().join("recording"), rate, 256)?;
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
     track::arm(&mut session, vox, true)?;
     track::input(&mut session, vox, Some(Input::Mono(0)))?;   // the first input channel, mono
@@ -46,7 +46,7 @@ use superb::{record, session, track, transport};
 
 fn main() -> Result<()> {
     let rate = SampleRate::HZ_48K;
-    let mut session = session::create(std::env::temp_dir().join("offline-take"), rate, 256)?;
+    let mut session = session::create(std::env::temp_dir().join("offline-recording"), rate, 256)?;
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
     track::arm(&mut session, vox, true)?;
     transport::start(&mut session)?;
@@ -96,7 +96,7 @@ Every signature, argument, error and undo step: [record reference](record.ref.md
   second. Armed MIDI tracks get a clip of the notes that arrived.
 * With `metronome::count_in` set, a recording that starts at the playhead
   rolls that many bars early with the click.
-* A device take is lined up with the transport by the device clock, so
+* A device recording is lined up with the transport by the device clock, so
   the buffers in and out never shift it.
 * Undoing a recording removes its clips and deletes its files; redo writes
   them again. `recover` deletes nothing.

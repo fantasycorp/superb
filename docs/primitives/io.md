@@ -128,7 +128,7 @@ is **MPL-2.0** — a file-level copyleft. Superb keeps it contained:
   crate that imports symphonia. Its header says so, as do the headers
   of `files/mod.rs`, `resample.rs` and `bounce.rs`.
 * Everything `decode.rs` exports is expressed in Superb types
-  (`PlanarBuffer`, `SampleRate`, `SuperbError::Message`), so no other file
+  (`PlanarBuffer`, `SampleRate`, `SuperbError`), so no other file
   names an MPL type.
 * The default-feature test `mpl_dependency_is_confined_to_decode_rs`
   scans every `.rs` file under `src/`, `tests/` and `examples/` and fails if
@@ -150,10 +150,10 @@ its `audioadapter` buffers (MIT OR Apache-2.0).
 use superb::primitives::SampleRate;
 use superb::primitives::io::files::{decode, decode_at_rate, decode_bytes};
 
-let file = decode("take.flac")?;            // container/codec probed from content
+let file = decode("vox.flac")?;            // container/codec probed from content
 println!("{} ch, {} frames @ {}", file.channels(), file.frames(), file.sample_rate);
-let at_48k = decode_at_rate("take.flac", SampleRate::HZ_48K)?; // decode + resample if needed
-let in_memory = decode_bytes(std::fs::read("take.wav")?, Some("wav"))?;
+let at_48k = decode_at_rate("vox.flac", SampleRate::HZ_48K)?; // decode + resample if needed
+let in_memory = decode_bytes(std::fs::read("vox.wav")?, Some("wav"))?;
 ```
 
 * `decode(path)` opens the file (seekable, so trailing metadata is read),
@@ -166,7 +166,7 @@ let in_memory = decode_bytes(std::fs::read("take.wav")?, Some("wav"))?;
   file channel order; samples are converted from the codec's native format
   by symphonia (`i16` → `f32` is `/32768`, matching `wav::read`).
 * Robustness rules: bytes that are not a recognised container fail with
-  `SuperbError::Message`; a stream truncated after at least one decoded
+  `SuperbError::Format`; a stream truncated after at least one decoded
   packet returns the frames decoded so far; a corrupt packet is skipped; a
   channel-count change mid-stream is an error; none of these panic.
 * Sample rate comes from the codec parameters (fallback: the first decoded
@@ -204,8 +204,8 @@ use superb::primitives::io::wav::WavFormat;
 let rendered = bounce_wav(&mut engine, SampleRate::HZ_48K, 256, 480_000, "mix.wav", WavFormat::Float32)?;
 
 // or keep it in memory as an AudioFile and write later (possibly resampled)
-let take = bounce(&mut engine, SampleRate::HZ_48K, 256, 480_000)?;
-export_wav("mix_cd.wav", &take.resampled_to(SampleRate::CD)?, WavFormat::Pcm16)?;
+let mix = bounce(&mut engine, SampleRate::HZ_48K, 256, 480_000)?;
+export_wav("mix_cd.wav", &mix.resampled_to(SampleRate::CD)?, WavFormat::Pcm16)?;
 ```
 
 `bounce` is `offline::render` with the sample rate attached; `bounce_wav`

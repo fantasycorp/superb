@@ -20,13 +20,13 @@ fn main() -> Result<()> {
     let vocal = session::import_audio(&mut session, "/music/vocal.wav")?;   // audio/vocal.wav
     clip::add(&mut session, vox, vocal.key, TimePosition::ZERO)?;
 
-    session::set_tempo(&mut session, 100.0)?;
+    session::tempo(&mut session, 100.0)?;
     session::tempo_change(&mut session, BeatPosition::new(16.0), Some(TempoChange::Step(120.0)))?;   // faster from bar 5
     session::tempo_change(&mut session, BeatPosition::new(32.0), Some(TempoChange::Ramp(120.0)))?;   // from bar 9, gliding
     session::tempo_change(&mut session, BeatPosition::new(48.0), Some(TempoChange::Step(90.0)))?;    // down to 90 at bar 13
     session::meter_change(&mut session, 9, Some(TimeSignature::new(6, 8)?))?;     // 6/8 from bar 9
     let range = LoopRange::new(TimePosition::ZERO, TimePosition::from_seconds(8.0, rate))?;
-    session::set_loop(&mut session, Some(range))?;
+    session::loop_range(&mut session, Some(range))?;
 
     marker::add(&mut session, "verse", TimePosition::from_seconds(8.0, rate))?;
     session::undo(&mut session)?;                                // the marker is gone
@@ -49,15 +49,15 @@ Run `cargo run --example new_session` for the same thing without a file on disk.
 | verb | does | undo |
 |---|---|---|
 | `create(folder, rate, block_size) -> Session` | a new session folder, `memory.json` written at once | — |
-| `open(folder, block_size) -> Session` | read it back, audio included | — |
-| `save(session)` | write `memory.json` and any audio not on disk yet | — |
-| `layout(session) -> Layout` | paths in the folder: `memory()`, `state()`, `audio()`, `bounce(name)`, `stem_set(name)` | — |
+| `open(folder, block_size) -> Session` | read it back, audio and plugin state included | — |
+| `save(session)` | write `memory.json`, any audio not on disk yet, and each plugin's state | — |
+| `layout(session) -> Layout` | paths in the folder: `memory()`, `state()`, `audio()`, `plugin_state(insert)`, `bounce(name)`, `stem_set(name)` | — |
 | `import_audio(session, file) -> Imported` | decode a file into `audio/<name>.wav`; `clip::add` takes `.key` | — |
 | `state_file(session, Option<path>)` | where mute, solo, arm and the playhead are kept; unset, they are not saved | — |
-| `set_tempo(session, bpm)` | the tempo at the start | drag |
+| `tempo(session, bpm)` | the tempo at the start | drag |
 | `tempo_change(session, beat, Option<TempoChange>)` | add or remove a tempo change: `Step(bpm)` holds, `Ramp(bpm)` glides to the next change | one |
 | `meter_change(session, bar, Option<TimeSignature>)` | set or remove the meter from a bar | one |
-| `set_loop(session, Option<LoopRange>)` | the loop range; `transport::looping` turns it on | drag |
+| `loop_range(session, Option<LoopRange>)` | the loop range; `transport::looping` turns it on | drag |
 | `undo(session) -> bool` / `redo(session) -> bool` | `false` when there is nothing to do | |
 
 Every signature, argument, error and undo step: [session reference](session.ref.md).
@@ -83,6 +83,7 @@ Every signature, argument, error and undo step: [session reference](session.ref.
     memory.json         the edits
     state.json          the state, once state_file names it
     audio/              what clips play: imports and recordings, 32-bit float WAV
+    plugins/            each plugin's saved state, <insert id>.state
     bounces/            export::bounce
     stems/<name>/       export::stems, with manifest.json
 ```
@@ -93,7 +94,7 @@ Every signature, argument, error and undo step: [session reference](session.ref.
 * A ramp is two changes: `TempoChange::Ramp(bpm)` where it begins and any
   change where it arrives. With nothing after it a ramp has nowhere to go
   and holds. Beat zero takes a change too, so a session can begin with a
-  ramp; `set_tempo` then moves where it begins. The click, MIDI clips and
+  ramp; `tempo` then moves where it begins. The click, MIDI clips and
   the grid follow; audio stays where it is.
 * `import_audio` resamples to the session's rate on the way in. With the
   `files` feature it reads WAV, AIFF, FLAC, ALAC, MP3, AAC, Ogg Vorbis, CAF

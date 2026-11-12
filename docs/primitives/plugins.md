@@ -19,18 +19,36 @@ Third-party deps (all behind the default `clap` feature): `clap-sys` 0.5
 
 * `PluginInstance` — the contract: `descriptor`, `ports`, `params`,
   `param_value`, `set_param` (queues for the next block, or flushes
-  immediately while inactive), `activate`/`deactivate`/`is_active`, `reset`,
-  `process`, `latency_frames`, `save_state`/`load_state`.
+  immediately while inactive), `set_param_at` (the same, on a frame
+  inside the block), `activate`/`deactivate`/`is_active`, `reset`,
+  `process`, `drain_changes` (what the plugin changed itself, after a
+  block), `latency_frames`, `save_state`/`load_state`, and `control()`
+  for its main-thread side.
+* `PluginControl` — what the control thread keeps once the instance is in
+  a running graph: `param_value`, `save_state`, `load_state`. CLAP lets
+  these main-thread calls run beside `process`; `clap::ClapControl` makes
+  them, and fails cleanly once the instance is dropped.
 * `PluginDescriptor` (`format`, `id`, `name`, `vendor`, `version`,
   `features`, `path`; `is_instrument`/`is_audio_effect`), `ParamInfo`
   (`id`, `name`, `module`, `min`/`max`/`default`, `automatable`, `stepped`,
   `hidden`, `readonly`, `bypass`), `AudioPortLayout` (`inputs`/`outputs`
-  channel counts of the main ports), `ParamChange`.
+  channel counts of the main ports), `ParamChange` (`id`, `value`,
+  `frame`: where in the block it lands; `ParamChange::new(id, value)` is
+  the start of the block, `.at(frame)` places it), `PluginChange`
+  (`Touched { id }`, `Value { id, value }`, `Released { id }`: what a
+  plugin did to its own parameter).
 * `PluginNode` — wraps `Box<dyn PluginInstance>` as a `Node`. `prepare`
   activates (a failure makes the node silent), `process` drains the
   wait-free parameter queue (`take_param_sender()` → `superb::primitives::realtime::spsc`
   producer for the UI thread) then renders; `latency_frames` forwards the
-  plugin's latency so the graph compensates it.
+  plugin's latency so the graph compensates it. After each block the
+  node forwards the plugin's own changes to a second queue
+  (`take_change_receiver()`), which belongs to the instance and so keeps
+  delivering after a hand-over. `bypass_handle()` is a live bypass. `carried_as(key)` names the instance, and a node made with
+  `adopting(key, name, ports, latency)` in the next graph takes it over
+  when the graphs are swapped, so a plugin outlives a rebuild
+  (`Node::carry`); `latency_handle()` tells the control side the latency
+  to lay that graph out with.
 * `clap::ClapBundle` — `load(path)` (`.clap` shared library, or a macOS
   bundle directory), `from_entry(&'static clap_plugin_entry, path)` for
   in-process plugins, `descriptors()`, `instantiate(id)`.
@@ -65,7 +83,7 @@ if let Some(desc) = report.plugins.iter().find(|d| d.is_audio_effect()) {
     graph.connect(osc, fx).unwrap();
     graph.set_output(fx).unwrap();
     graph.prepare(SampleRate::HZ_48K, 256).unwrap(); // activates the plugin
-    let _ = params.push(superb::primitives::plugins::ParamChange { id: 0, value: 0.5 });
+    let _ = params.push(superb::primitives::plugins::ParamChange::new(0, 0.5));
 }
 ```
 

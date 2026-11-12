@@ -111,7 +111,7 @@ queue (`Source::Queue`), and takes the MIDI that arrived since the last call
 either way; a device recording's audio has its own thread. Returns the
 frames captured in total, or zero when nothing is recording.
 `session::steps::render_blocks` calls this after every block; with a device
-driving the engine, call it from a timer during long takes, so the MIDI
+driving the engine, call it from a timer during long recordings, so the MIDI
 queue (`MIDI_CAPTURE_CAPACITY` messages) never fills.
 
 **Takes**
@@ -142,12 +142,12 @@ before it (the roll towards it, a count-in) stays in the file ahead of the
 clip's offset, and what came after the punch-out stays past its end, so the
 clip can be trimmed out over it later like any other. The file holds the
 channels the track's `Input` selects (tracks without one get the whole
-capture). A device take lands where it was played: the file's first frame is
-placed by the device clock, and a capture that began after the transport
-rolled gives a clip that starts that much later. Returns the new clips (none
-if nothing was captured). The whole placement is one undo step called
-"Record": undoing it removes the clips and deletes the files it wrote, redo
-writes them again from the audio kept in memory.
+capture). A device recording lands where it was played: the file's first
+frame is placed by the device clock, and a capture that began after the
+transport rolled gives a clip that starts that much later. Returns the new
+clips (none if nothing was captured). The whole placement is one undo step
+called "Record": undoing it removes the clips and deletes the files it
+wrote, redo writes them again from the audio kept in memory.
 
 **Takes**
 - `session: &mut Session` — the open session, borrowed mutably
@@ -241,10 +241,10 @@ A recording in progress: what `Session::recording` holds between `start` and
 `stop`. Its audio is on disk from the first block: one WAV file per armed
 audio track in the session folder (`audio/vox 1.wav`), written as the blocks
 arrive and flushed about once a second, so a crash costs a second of audio,
-not the take, and the take never has to fit in memory. The counters here are
-what an application shows while it records: frames captured and sealed on
-disk, blocks dropped, disk errors, the level of the latest block, and how
-long ago it came.
+not the recording, and the recording never has to fit in memory. The
+counters here are what an application shows while it records: frames
+captured and sealed on disk, blocks dropped, disk errors, the level of the
+latest block, and how long ago it came.
 
 **Methods**
 - `fn frames(&self) -> usize` — Frames captured so far: handed to the files, not all on disk yet.

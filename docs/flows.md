@@ -11,6 +11,8 @@ free functions over a `Session`. Every page opens with a full example.
 | `marker` | named places on the timeline | [marker](flows/marker.md) |
 | `transport` | start, stop, seek, loop; the playhead | [transport](flows/transport.md) |
 | `send` | a copy of a track into a bus | [send](flows/send.md) |
+| `insert` | effects on a track: compressor, limiter, gate, de-esser, leveler | [insert](flows/insert.md) |
+| `plugin` | CLAP plugins on a track: scan, parameters, state | [plugin](flows/plugin.md) |
 | `midi` | play notes from code; connect a keyboard | [midi](flows/midi.md) |
 | `record` | record onto armed tracks; punch points; recover after a crash | [record](flows/record.md) |
 | `metronome` | the click; a count-in | [metronome](flows/metronome.md) |

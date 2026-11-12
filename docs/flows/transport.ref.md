@@ -116,7 +116,7 @@ pub fn looping(session: &mut Session, on: bool) -> Result<()>
 ```
 
 Turns looping over the session's loop range on or off (set the range with
-`session::set_loop`). State, like mute: saved with the session, applied at
+`session::loop_range`). State, like mute: saved with the session, applied at
 the engine's next block, not an undo step.
 
 **Takes**

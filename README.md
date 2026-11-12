@@ -17,7 +17,8 @@ The crate is organised so you always know what a call will do.
 **Flows** are top-level modules named after the things you work with and
 the tasks you do. Each one is a group of free functions that borrow a
 `Session` and do the whole job: `session`, `track`, `clip`, `marker`,
-`transport`, `send`, `midi`, `record`, `metronome`, `export`, `devices`.
+`transport`, `send`, `insert`, `plugin`, `midi`, `record`, `metronome`,
+`export`, `devices`.
 They are modules of functions, not classes: there is no object to
 construct and no method to look up, and the `Session` is a plain struct
 with public fields. Every flow function documents the primitive calls it
@@ -35,6 +36,8 @@ They know nothing about flows or the `Session`.
 | `marker` | named places on the timeline: add, move, rename, remove | [marker.md](docs/flows/marker.md) |
 | `transport` | start, stop, seek, rewind, loop; where the playhead is | [transport.md](docs/flows/transport.md) |
 | `send` | a copy of a track into a bus: add, remove, level, on/off | [send.md](docs/flows/send.md) |
+| `insert` | the effects in a track's signal path: compressor, limiter, gate, de-esser, leveler; parameters, bypass, a gain-reduction meter | [insert.md](docs/flows/insert.md) |
+| `plugin` | CLAP plugins as inserts: scan, parameters, state saved with the session; an instance is kept running across rebuilds | [plugin.md](docs/flows/plugin.md) |
 | `midi` | play and release notes, send any message, connect a keyboard | [midi.md](docs/flows/midi.md) |
 | `record` | start a recording, stop it, get a clip on every armed track, audio and MIDI; punch points | [record.md](docs/flows/record.md) |
 | `metronome` | a click while the transport rolls, its level, bars of count-in before a recording | [metronome.md](docs/flows/metronome.md) |
@@ -55,7 +58,7 @@ They know nothing about flows or the `Session`.
 | `primitives::analysis` | meters, loudness | sample and true peak, RMS, LUFS (momentary, short-term, gated integrated), loudness normalisation, lining two recordings up, silence | [analysis.md](docs/primitives/analysis.md) |
 | `primitives::undo` | undo history | coalescing undo/redo stack with groups and clean-state tracking | [undo.md](docs/primitives/undo.md) |
 | `primitives::session` | the memory | `Memory`: tracks and their state, clips, markers, routing, inserts, tempo map, JSON save/load, the state file, undoable commands | [session.md](docs/primitives/session.md) |
-| `primitives::plugins` | plugin host | plugin instance model, `PluginNode`, CLAP host (VST3 is a stub) | [plugins.md](docs/primitives/plugins.md) |
+| `primitives::plugins` | plugin host | plugin instance model, `PluginNode` (hands its instance to the next graph at a swap), `PluginControl`, CLAP host (VST3 is a stub) | [plugins.md](docs/primitives/plugins.md) |
 | `primitives::io` | engine, devices, files | block loop, live engine with control handle, offline render, capture queue, WAV, decode/resample (feature `files`), device streams (feature `devices`) | [io.md](docs/primitives/io.md) |
 
 [docs/flows.md](docs/flows.md) explains how the flows fit together (the
@@ -143,6 +146,8 @@ cargo test                                     # the whole suite, no audio hardw
 cargo run --example new_session                # session, track, clip: undo, save and open
 cargo run --example play_session               # transport: start, seek, loop, offline blocks
 cargo run --example mix_session                # track and send: faders, a bus, sends, meters
+cargo run --example insert_chain               # insert: a compressor, a limiter on the master, bypass
+cargo run --example plugin_insert              # plugin: a CLAP effect on a track, if one is installed
 cargo run --example midi_keys                  # midi: notes into a monitoring track
 cargo run --example record_take                # record: a recording from a synthetic microphone
 cargo run --example metronome_count_in         # metronome: the click, and a count-in before recording
@@ -189,7 +194,10 @@ their state, a master track that is always there, clips, markers and
 routing (tracks and clips are archived, never deleted), JSON files and
 undo; an opt-in state file for mute, solo, arm, monitor, inputs, looping,
 the click and the playhead; a mixer built from the memory with faders,
-buses and sends, swapped glitch-free into a running engine; tempo
+buses, sends and insert chains of the built-in dynamics (compressor,
+limiter, gate, de-esser, leveler) and of CLAP plugins, which keep running
+across rebuilds and are saved with the session, swapped glitch-free into a
+running engine; tempo
 changes, stepped or ramped, and meter changes the engine and the click
 follow; audio import in every
 format the decoder reads, resampled once to the session's rate, with a
@@ -205,16 +213,15 @@ count-in; hearing the
 input, and a synth on a monitoring MIDI track so incoming notes become
 audio; MIDI messages, a MIDI
 channel per track, and hardware input. In the primitives only, for now:
-insert chains and CLAP plugin hosting, automation envelopes and modes,
-analysis (true peak, LUFS, loudness normalisation, lining two recordings
-up by their audio, silence) and dynamics (compressor, limiter, gate,
-de-esser, leveler).
+automation envelopes and modes, and analysis (true
+peak, LUFS, loudness normalisation, lining two recordings up by their
+audio, silence).
 
 What is not built yet, and the order to build it in, is one list:
-[DESIGN.md](DESIGN.md). The largest gaps are inserts and plugins through
-the flows, automation in the session, loop recording, and encoders other
-than WAV. ARA 2 plugin support is proposed in
-[ARA2_DESIGN.md](ARA2_DESIGN.md) (shelved for now).
+[DESIGN.md](DESIGN.md). The largest gaps are instrument plugins, VST3 and
+Audio Units, automation in the session, loop recording, and encoders other
+than WAV. ARA 2 plugin support is designed in
+[ARA2_DESIGN.md](ARA2_DESIGN.md) and follows the plugins flow.
 
 ## Licence
 

@@ -14,9 +14,9 @@ pub fn create( folder: impl AsRef<Path>, sample_rate: SampleRate, block_size: us
 ```
 
 Starts a new, empty session at 120 bpm in 4/4 in `folder`, which is created
-with the folders of its `Layout` (`audio/`, `bounces/`, `stems/`) and given
-its `memory.json` at once, so it can be opened from here on. The session is
-named after the folder. Under the default `Root` that is
+with the folders of its `Layout` (`audio/`, `plugins/`, `bounces/`,
+`stems/`) and given its `memory.json` at once, so it can be opened from here
+on. The session is named after the folder. Under the default `Root` that is
 `session::create(Root::default().folder("My Show"), ..)`, which makes
 `~/superb/My Show/`.
 
@@ -45,11 +45,12 @@ let mut session = session::create(Root::default().folder("My Show"), SampleRate:
 pub fn open(folder: impl AsRef<Path>, block_size: usize) -> Result<Session>
 ```
 
-Opens a session folder written by `save`: reads `memory.json` and loads
-every WAV file the clips refer to into `Session::audio`. A file that is
-missing or at another sample rate is left out, and its clip plays as
-silence. The undo history starts empty and clean. Recordings a crash left
-unfinished are noted in the log, not placed: `record::recover` does that.
+Opens a session folder written by `save`: reads `memory.json`, loads every
+WAV file the clips refer to into `Session::audio`, and reads what each
+plugin saved of itself from `plugins/`. A file that is missing or at another
+sample rate is left out, and its clip plays as silence. The undo history
+starts empty and clean. Recordings a crash left unfinished are noted in the
+log, not placed: `record::recover` does that.
 
 **Takes**
 - `folder: impl AsRef<Path>` — a session folder, one `create` made
@@ -61,7 +62,7 @@ unfinished are noted in the log, not placed: `record::recover` does that.
 
 **Undo** none: not an edit.
 
-**Made of** `Memory::load` → `Session::new` → `wav::read` per audio clip → `record::unfinished`.
+**Made of** `Memory::load` → `Session::new` → `wav::read` per audio clip → `fs::read` per plugin state file → `record::unfinished`.
 
 **Example**
 
@@ -77,7 +78,7 @@ pub fn layout(session: &Session) -> Layout
 ```
 
 Where each part of the session lives inside its folder: `memory.json`,
-`state.json`, `audio/`, `bounces/`, `stems/<name>/`.
+`state.json`, `audio/`, `plugins/`, `bounces/`, `stems/<name>/`.
 
 **Takes**
 - `session: &Session` — the open session, borrowed
@@ -106,7 +107,10 @@ pub fn save(session: &mut Session) -> Result<()>
 
 Saves the session into its folder: the memory as `memory.json`, after
 writing any audio a clip refers to that is not on disk yet (recordings
-already are). The history remembers this state as saved
+already are). Each plugin is asked for its state as it is now, which goes to
+a file of its own (`plugins/<insert id>.state`), and whatever a plugin
+changed itself since `plugin::changes` was last asked is taken into the
+memory first. The history remembers this state as saved
 (`session.history.is_clean()`).
 
 **Takes**
@@ -118,7 +122,7 @@ already are). The history remembers this state as saved
 
 **Undo** none: not an edit.
 
-**Made of** `wav::write` per audio clip not yet on disk → `Memory::save` → `UndoStack::mark_clean`.
+**Made of** `wav::write` per audio clip not yet on disk → `PluginControl::save_state` per loaded plugin → `fs::write` per plugin state → `MemorySnapshot` as JSON → `UndoStack::mark_clean`.
 
 **Example**
 
@@ -156,8 +160,8 @@ folder and stays, placing it is the undo step.
 **Example**
 
 ```rust
-let take = session::import_audio(&mut session, "/music/take.flac")?;
-println!("{take}");   // audio/take.wav: 44100 Hz, 24-bit, 2 channel(s), resampled to 48000 Hz, stored as 32-bit float
+let vox = session::import_audio(&mut session, "/music/vox.flac")?;
+println!("{vox}");   // audio/vox.wav: 44100 Hz, 24-bit, 2 channel(s), resampled to 48000 Hz, stored as 32-bit float
 clip::add(&mut session, vox, take.key, TimePosition::ZERO)?;
 ```
 
@@ -194,10 +198,10 @@ session::state_file(&mut session, Some(session.folder.join("state.json")))?;   /
 session::state_file(&mut session, None)?;                                            // stop writing; the file stays
 ```
 
-### `set_tempo`
+### `tempo`
 
 ```rust
-pub fn set_tempo(session: &mut Session, bpm: f64) -> Result<()>
+pub fn tempo(session: &mut Session, bpm: f64) -> Result<()>
 ```
 
 Sets the memory's tempo at the start. Consecutive changes are one undo step.
@@ -221,7 +225,7 @@ hands the engine the new map.
 **Example**
 
 ```rust
-session::set_tempo(&mut session, 100.0)?;
+session::tempo(&mut session, 100.0)?;
 ```
 
 ### `tempo_change`
@@ -292,10 +296,10 @@ notated beat. Rebuilds the mixer, which hands the engine the new map.
 session::meter_change(&mut session, 9, Some(TimeSignature::new(6, 8)?))?;
 ```
 
-### `set_loop`
+### `loop_range`
 
 ```rust
-pub fn set_loop(session: &mut Session, range: Option<LoopRange>) -> Result<()>
+pub fn loop_range(session: &mut Session, range: Option<LoopRange>) -> Result<()>
 ```
 
 Sets or clears the loop range in the memory and on the running engine. Turn
@@ -316,7 +320,7 @@ looping on with `transport::looping`.
 **Example**
 
 ```rust
-session::set_loop(&mut session, Some(LoopRange::new(TimePosition::ZERO, TimePosition::from_seconds(8.0, rate))?))?;
+session::loop_range(&mut session, Some(LoopRange::new(TimePosition::ZERO, TimePosition::from_seconds(8.0, rate))?))?;
 transport::looping(&mut session, true)?;
 ```
 
@@ -387,12 +391,14 @@ does not do exactly what you want.
 - `engine: EngineHandle` — Control handle to the engine: commands, graph swaps, position.
 - `audio_thread: Option<AudioThread>` — The engine's audio side. Present until a device takes it (`devices::output`, feature `devices`); while present, `steps::render_blocks` ticks it by hand.
 - `mixer: MixerHandles` — The live controls of the mixer built by the last `steps::rebuild`: one per strip and send, keyed by the memory's ids.
-- `recording: Option<crate::record::Recording>` — A take being recorded, if any.
+- `recording: Option<crate::record::Recording>` — The recording in progress, if any.
 - `channels: usize` — Channels per strip and at the output: 2, stereo. Change it before the first rebuild if you need another width.
 - `output: Option<crate::primitives::io::LiveOutput>` — The device output, once `devices::output` started one: the audio thread lives inside it until `devices::close_output`.
 - `input: Option<crate::devices::AudioInput>` — The audio input, once `devices::input` opened it: what monitoring audio tracks hear and device recordings capture.
 - `midi_inputs: Vec<crate::primitives::midi::input::MidiInputBridge>` — Hardware MIDI inputs connected so far. Dropping one disconnects it.
 - `state_file: Option<PathBuf>` — Where state is kept, once `state_file` named a file; `None` means state is not saved.
+- `plugins: Vec<(InsertId, plugins::PluginSlot)>` — The plugin inserts that have been asked for: each loaded, or the reason it is missing. A plugin is loaded when its insert is added, or at the first rebuild after the session is opened.
+- `plugin_loader: plugins::PluginLoader` — What turns a plugin reference into an instance; CLAP by default (`plugins::default_loader`).
 
 **Methods**
 - `const COALESCE_WINDOW: core::time::Duration` — How long a pause between two edits of the same control turns them into separate undo steps.
@@ -410,11 +416,40 @@ are stale: look them up again.
 **Fields**
 - `strips: Vec<(TrackId, Arc<StripParams>)>` — A track or bus in the memory → its strip: volume, pan, mute, solo, pan law and the peak meter.
 - `sends: Vec<(SendId, Arc<SendParams>)>` — A send in the memory → its level and on/off.
+- `inserts: Vec<(InsertId, InsertParams)>` — An insert in the memory → the live controls of its effect. Bypassed inserts and plugins have none: they are not in the mixer.
+- `plugins: Vec<(InsertId, PluginHandle)>` — A plugin insert in the mixer → its parameter queue and its bypass.
 - `click: Arc<ClickParams>` — The metronome's click on the master: on/off, level, count-in.
 
 **Methods**
 - `fn strip(&self, track: TrackId) -> Option<&Arc<StripParams>>` — The live strip of a track or bus.
 - `fn send(&self, send: SendId) -> Option<&Arc<SendParams>>` — The live controls of a send.
+- `fn plugin(&self, insert: InsertId) -> Option<&PluginHandle>` — The live controls of a plugin insert, if it is in the mixer.
+- `fn plugin_mut(&mut self, insert: InsertId) -> Option<&mut PluginHandle>` — The live controls of a plugin insert, to push a parameter change.
+- `fn insert(&self, insert: InsertId) -> Option<&InsertParams>` — The live controls of an insert, if it is in the mixer.
+
+### `PluginHandle`
+
+The live controls of one plugin in the mixer.
+
+**Fields**
+- `params: ` — Parameter changes for the plugin, applied at the start of its next block.
+- `bypass: Arc<core::sync::atomic::AtomicBool>` — While set, the plugin is not run and its input passes through.
+
+### `InsertParams`
+
+The live controls of one built-in effect in the mixer: the atomics its node
+reads on the audio thread, so a value set here is heard at the next block.
+
+**Variants**
+- `Compressor(Arc<CompressorParams>)` — A compressor's controls.
+- `Limiter(Arc<LimiterParams>)` — A limiter's controls.
+- `Gate(Arc<GateParams>)` — A gate's controls.
+- `DeEsser(Arc<DeEsserParams>)` — A de-esser's controls.
+- `Leveler(Arc<LevelerParams>)` — A leveler's controls.
+
+**Methods**
+- `fn set(&self, param: EffectParam, value: f32) -> Result<()>` — Sets one parameter on the running effect. Fails if the effect has no such parameter.
+- `fn reduction_db(&self) -> f32` — How much the effect was turning the signal down at the end of the last block, in dB, for a gain-reduction meter. Zero or more, except a leveler that is turning the signal up, which reads below zero.
 
 ### `Imported`
 
@@ -455,6 +490,7 @@ assert_eq!(layout.folder(), Path::new("/music/My Show"));
 assert_eq!(layout.memory(), Path::new("/music/My Show/memory.json"));
 assert_eq!(layout.state(), Path::new("/music/My Show/state.json"));
 assert_eq!(layout.audio(), Path::new("/music/My Show/audio"));
+assert_eq!(layout.plugins(), Path::new("/music/My Show/plugins"));
 assert_eq!(layout.bounces(), Path::new("/music/My Show/bounces"));
 assert_eq!( layout.bounce("rough mix"), Path::new("/music/My
 Show/bounces/rough mix.wav") ); assert_eq!(layout.stems(),
@@ -467,6 +503,8 @@ Path::new("/music/My Show/stems/final") ); ```
 - `fn memory(&self) -> PathBuf` — `memory.json`: the session's edits.
 - `fn state(&self) -> PathBuf` — `state.json`: where the session's state goes once `session::state_file` names this file. Nothing writes it before.
 - `fn audio(&self) -> PathBuf` — `audio/`: what clips play, recordings and imports.
+- `fn plugins(&self) -> PathBuf` — `plugins/`: what each plugin saved of itself.
+- `fn plugin_state(&self, insert: InsertId) -> PathBuf` — `plugins/<insert id>.state`: the bytes the plugin of `insert` saved, as `session::save` writes them. Only that plugin can read them.  ``` use std::path::Path; use superb::primitives::InsertId; use superb::session::Layout;  let layout = Layout::new("/music/My Show"); assert_eq!( layout.plugin_state(InsertId::from_raw(12)), Path::new("/music/My Show/plugins/12.state") ); ```
 - `fn bounces(&self) -> PathBuf` — `bounces/`: mixes.
 - `fn bounce(&self, name: &str) -> PathBuf` — `bounces/<name>.wav`: a bounce called `name`, for `export::bounce`.
 - `fn stems(&self) -> PathBuf` — `stems/`: stem sets, one folder each.

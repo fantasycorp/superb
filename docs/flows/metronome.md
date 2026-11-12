@@ -12,11 +12,11 @@ use superb::{metronome, record, session, track, transport};
 fn main() -> Result<()> {
     let rate = SampleRate::HZ_48K;
     let mut session = session::create(std::env::temp_dir().join("click"), rate, 256)?;
-    session::set_tempo(&mut session, 120.0)?;                 // a beat is half a second
+    session::tempo(&mut session, 120.0)?;                 // a beat is half a second
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
     track::arm(&mut session, vox, true)?;
 
-    metronome::enable(&mut session, true)?;                   // state
+    metronome::on(&mut session, true)?;                   // state
     metronome::level(&mut session, -6.0)?;                    // heard at once
     transport::start(&mut session)?;
     let audio = session::steps::render_blocks(&mut session, 94)?;   // one beat
@@ -36,7 +36,7 @@ fn main() -> Result<()> {
 
 | verb | does | undo |
 |---|---|---|
-| `enable(session, on)` | the click while rolling | state |
+| `on(session, on)` | the click while rolling | state |
 | `level(session, db)` | heard at once | drag |
 | `count_in(session, bars)` | bars of click before a recording that starts at the playhead; `0` for none | state |
 

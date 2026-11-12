@@ -21,20 +21,26 @@ The open session a flow takes is `session::Session`. This module is
 State: each object keeps its settable fields under one `state`:
 `Track.state: TrackState { volume_db, pan, mute, solo, arm, monitor, input, midi_channel, archived }`,
 `Clip.state: ClipState { gain_db, mute, fade_in, fade_out, archived }`,
-`TrackSend.state: SendState { level_db, enabled }` (`pre_fader` is on the
+`TrackSend.state: SendState { level_db, enabled }` (`tap: SendTap` is on the
 send itself, not in `state`), `Insert.state: InsertState { bypass, params }`
-(the plugin's own saved bytes are `Insert.preset`). Snapshots accept the
+(the plugin's own saved bytes are `Insert.preset`; a session folder keeps
+them in `plugins/<insert id>.state`, and a snapshot leaves an empty
+`preset` out). Snapshots accept the
 older flat field names.
 
-Inserts: a track's plugin chain is part of the memory. `Insert`
-(`PluginRef` = format, path, id; `InsertState { bypass, params }`;
-`preset: Vec<u8>`) lives in `Track::inserts()`, is saved in the snapshot,
-and is edited through `AddInsert`, `RemoveInsert`, `MoveInsert` and the
-coalescing `set_insert_bypass` / `set_insert_param` property edits.
-`Memory::allocate_insert_id` mints IDs. `session::steps::build_mixer` does
-not read the chain, so a stored insert is not heard until a caller loads
-the plugin and places a `PluginNode` (or calls `Mixer::add_insert` on a
-mixer they built).
+Inserts: a track's effect chain is part of the memory, the master's
+included. `Insert` (`effect: Effect`, a built-in `Compressor`, `Limiter`,
+`Gate`, `DeEsser` or `Leveler`, or `Plugin(PluginRef)` = format, path, id;
+`InsertState { bypass, params }`; `preset: Vec<u8>`) lives in
+`Track::inserts()`, is saved in the snapshot, and is edited through
+`AddInsert`, `RemoveInsert`, `MoveInsert` and the coalescing
+`set_insert_param` property edit. A built-in effect's parameter ids are
+`EffectParam::id()`. Bypass is state: set on `insert_mut(id)?.state.bypass`
+and saved in the state file. `Memory::allocate_insert_id` mints IDs.
+`session::steps::build_mixer` builds every built-in effect that is not
+bypassed; a plugin insert is stored and skipped until a caller loads the
+plugin and places a `PluginNode` (or calls `Mixer::add_insert` on a mixer
+they built). The verbs are the `insert` flow.
 
 * `Memory` — name, `SampleRate`, `TempoMap`, `Option<LoopRange>`, ordered
   `Track`s, position-sorted `Marker`s, `MetronomeState`, a per-session ID
@@ -45,7 +51,7 @@ mixer they built).
   mute/solo/arm, start-sorted `Clip`s (`Bus` tracks hold no clips), an
   `output()` (the bus track it feeds, `None` = master) and `sends()`.
 * `TrackSend` — `SendId`, destination bus track (fixed at creation),
-  `level_db`, `pre_fader`, `enabled`. Only audio/MIDI tracks send; only
+  `level_db`, `tap` (`SendTap::PreFader` / `PostFader`), `enabled`. Only audio/MIDI tracks send; only
   bus tracks receive. `Memory::set_track_output` / `add_send` validate
   the target kind and reject bus → bus cycles; removing a bus detaches
   everything routed into it (`tracks_routed_to` / `sends_to` let you
@@ -69,13 +75,12 @@ mixer they built).
   Property edits, which coalesce: `set_session_name`,
   `set_metronome_level_db`, `set_track_name`, `set_track_volume_db`,
   `set_track_pan`, `set_track_color`, `set_send_level_db`,
-  `set_send_enabled`, `set_send_pre_fader`, `set_insert_bypass`,
-  `set_insert_param`, `set_clip_name`, `set_clip_gain_db`,
+  `set_send_tap`, `set_insert_param`, `set_clip_name`, `set_clip_gain_db`,
   `set_clip_fade_in`, `set_clip_fade_out`, `set_marker_name`.
-  `set_track_mute`, `set_track_solo`, `set_track_arm`, `set_track_monitor`
-  and `set_clip_mute` exist too. The flows do not push them: mute, solo,
-  arm, monitor and clip mute are state and go through `session::set_state`,
-  which is not an undo step. Coalesce keys live in `commands::keys`.
+  There is no command for mute, solo, arm, monitor, clip mute, send on/off
+  or insert bypass: those are state, set on the object's `state` (the
+  flows go through `session::set_state`), and never an undo step. Coalesce
+  keys live in `commands::keys`.
 
 ## Usage
 
@@ -93,8 +98,8 @@ let track = memory.allocate_track_id();
 history.push(&mut memory, AddTrack::new(Track::with_id(track, "vox", TrackKind::Audio))).unwrap();
 
 let clip = memory.allocate_clip_id();
-let take = Clip::with_id(clip, "take 1", TimePosition::ZERO, TimeDuration::from_samples(1_000), ClipSource::Empty).unwrap();
-history.push(&mut memory, AddClip::new(track, take)).unwrap();
+let lead = Clip::with_id(clip, "lead 1", TimePosition::ZERO, TimeDuration::from_samples(1_000), ClipSource::Empty).unwrap();
+history.push(&mut memory, AddClip::new(track, lead)).unwrap();
 
 // A drag: many small moves, one undo step.
 for x in [100, 200, 300] {
@@ -123,6 +128,7 @@ Routing lives in the memory too:
 
 ```rust
 use superb::primitives::SampleRate;
+use superb::primitives::mixer::SendTap;
 use superb::primitives::session::commands::{AddSend, SetTrackOutput, set_send_level_db};
 use superb::primitives::session::{Memory, TrackKind, TrackSend};
 use superb::primitives::undo::UndoStack;
@@ -138,7 +144,7 @@ assert!(memory.set_track_output(drums, Some(drums)).is_err());        // cycle
 assert!(memory.set_track_output(vox, Some(vox)).is_err());            // not a bus
 
 let send = memory.allocate_send_id();
-history.push(&mut memory, AddSend::new(vox, TrackSend::with_id(send, verb).pre_fader())).unwrap();
+history.push(&mut memory, AddSend::new(vox, TrackSend::with_id(send, verb).tap(SendTap::PreFader))).unwrap();
 history.push(&mut memory, set_send_level_db(send, -12.0)).unwrap();
 assert_eq!(memory.send(send).unwrap().state.level_db, -12.0);
 

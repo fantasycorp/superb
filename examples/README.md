@@ -14,6 +14,8 @@ One per flow module, in the order you would use them to make a session.
 | `new_session` | `session`, `track`, `clip` | tracks, an audio clip from memory, a MIDI clip, tempo, marker, undo/redo, save and open | `cargo run --example new_session` |
 | `play_session` | `transport` | start, offline blocks, playhead, seek, loop, stop, rewind; device output with `devices` | `cargo run --example play_session` |
 | `mix_session` | `track`, `send` | a volume drag as one undo step, pan, mute, solo, a bus with sends, routing, meters | `cargo run --example mix_session` |
+| `insert_chain` | `insert` | a compressor on a track, parameters heard at once, the gain-reduction meter, bypass, a limiter on the master, undo, save and open | `cargo run --example insert_chain` |
+| `plugin_insert` | `plugin` | scan for CLAP plugins, put one on a track, list and set its parameters, a rebuild that keeps it running, its state saved and reopened | `cargo run --example plugin_insert` |
 | `midi_keys` | `midi` | a monitoring MIDI track, notes and a chord, release, any message; ports with `midi-io` | `cargo run --example midi_keys` |
 | `metronome_count_in` | `metronome` | the click while playing, a one-bar count-in before a recording, the clip starting at the punch-in | `cargo run --example metronome_count_in` |
 | `record_take` | `record` | arm, punch in, a recording from a synthetic microphone, clips, undo; a real input with `devices` | `cargo run --example record_take` |

@@ -1,6 +1,6 @@
 # primitives::mixer
 
-A mixing console built on `superb::primitives::graph::AudioGraph`.
+A mixer built on `superb::primitives::graph::AudioGraph`.
 
 ## Purpose
 
@@ -61,7 +61,7 @@ where `connect_source` and pre-fader sends attach) followed by a `StripNode`
 (gain → pan → mute/solo → meter). Post-fader sends tap the strip node
 instead. This split is why `SendTap::PreFader` sends survive a track's mute
 and gain changes while `SendTap::PostFader` sends do not — see
-`sends_pre_and_post_fader` in `src/primitives/mixer/console.rs`.
+`sends_pre_and_post_fader` in `src/primitives/mixer/routing.rs`.
 
 ## Real-time notes
 
