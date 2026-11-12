@@ -8,7 +8,7 @@ const INSTALL = "cargo add superb --features devices";
 
 // The quick start: make a sound, play it through the default output, bounce
 // it to a WAV. PROGRAM is what gets copied, a whole program; the page shows
-// its body and the file it leaves behind.
+// its body.
 const PROGRAM = `use std::{thread, time::Duration};
 use superb::export::{self, Bounce};
 use superb::primitives::buffers::PlanarBuffer;
@@ -214,12 +214,7 @@ export function Hero() {
                   <Tok key="x45" kind="ty">Bounce</Tok>,
                   "::",
                   <Tok key="x46" kind="fn">default</Tok>,
-                  "())?;\n\n",
-                  <span key="mark" className="answerMark">&gt;</span>,
-                  " ",
-                  <span key="answer" className="answer">demo/bounces/mix.wav</span>,
-                  "\n  ",
-                  <span key="meta" className="meta">1 s of A440, heard, then bounced</span>,
+                  "())?;",
                 ]}
               </code>
             </pre>
