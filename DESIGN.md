@@ -17,14 +17,21 @@ audio path, a no-alloc test.
 
 | # | what | why here |
 |---|---|---|
-| 1 | Inserts on rebuild, then the plugins flow | The memory stores a track's inserts and `build_mixer` ignores them, so nothing stored as an insert is ever heard. Begin with the built-in dynamics as inserts (no FFI), then CLAP. Decide here how a plugin instance outlives a rebuild. |
-| 2 | Automation in the memory, with a flow | Envelopes exist as primitives, but the memory owns no lanes. Automation needs insert parameters as targets, so it follows step 1. |
-| 3 | Incremental mixer updates | A rebuild replaces the whole mixer. Today that costs a meter reset; once plugins exist it cuts their tails and builds them again on every clip drag. |
-| 4 | Duplex streams, and MIDI on the audio clock | Hardware MIDI lands at block resolution, which is timing error in every MIDI recording. Input and output run as two streams on two clocks. |
-| 5 | Loop recording | Builds on the recording that exists. Needs a model for recordings stacked on one range, and a word for them: TERMINOLOGY reserves "take". |
-| 6 | MIDI ports per track, then Standard MIDI Files | Every connected port feeds every track today. Files are the way MIDI moves between programs. SysEx and MIDI Time Code are rarer and come last. |
-| 7 | Encoders other than WAV, with dither | Bouncing to 16-bit truncates without dither. Any encoder has to pass the licence rule in CONTRIBUTING. |
-| 8 | VST3, then ARA 2 | The largest and the most constrained by licence. ARA 2 needs a plugins flow and VST3 first; see [ARA2_DESIGN.md](ARA2_DESIGN.md). |
+| 1 | Finish the plugins flow for CLAP | Effects work: a CLAP plugin is an insert, loaded once, handed from mixer to mixer at each rebuild, saved with the session. What is left before another format is worth adding: an instrument on a MIDI track, and the host extensions a real plugin asks for (a parameter rescan, a latency that changes, its window). The plugin's own parameter changes are heard (`plugin::changes`). |
+| 2 | VST3 hosting | Most plugins a musician owns are VST3. The SDK is MIT-licensed from 3.8.0 (October 2025), so the licence no longer holds it. It lands behind a feature, through the same flow as step 1. |
+| 3 | Audio Units hosting | macOS only, through the system's AudioToolbox. Some plugins ship as nothing else there. Behind a feature, through the same flow. |
+| 4 | Automation in the memory, with a flow | Envelopes exist as primitives, but the memory owns no lanes. Insert and plugin parameters are its targets, beside volume, pan and send level. For a plugin the pieces it stands on are in place: a `ParamChange` lands on a frame inside a block, and the plugin's gestures (`PluginChange::Touched`, `Released`) are heard for touch and latch. The order on load is fixed: the plugin's state file, then the memory's parameter values, then automation on top. A bounce's copy of a plugin must be driven by the same lanes. |
+| 5 | Incremental mixer updates | A rebuild replaces the whole mixer. With plugins in it, a rebuild on every clip drag is expensive even when the instances are kept. |
+| 6 | ARA 2 | A plugin reads whole clips and sends edits back. It needs the instances of step 1; it goes through CLAP first, then VST3 and AU. See [ARA2_DESIGN.md](ARA2_DESIGN.md). |
+| 7 | Duplex streams, and MIDI on the audio clock | Hardware MIDI lands at block resolution, which is timing error in every MIDI recording. Input and output run as two streams on two clocks. |
+| 8 | Loop recording | Builds on the recording that exists. Needs a model for recordings stacked on one range, and a word for them: TERMINOLOGY reserves "take". |
+| 9 | MIDI ports per track, then Standard MIDI Files | Every connected port feeds every track today. Files are the way MIDI moves between programs. SysEx and MIDI Time Code are rarer and come last. |
+| 10 | Encoders other than WAV, with dither | Bouncing to 16-bit truncates without dither. Any encoder has to pass the licence rule in CONTRIBUTING. |
+
+Plugins come first by decision (2026-11-11). Within them CLAP is first
+because its host is written and tested; VST3 and Audio Units reuse the
+flow it defines: each is a `PluginInstance` with a `PluginControl`, made
+by `Session::plugin_loader`.
 
 ## Everything not built
 
@@ -32,20 +39,26 @@ audio path, a no-alloc test.
 
 | item | state | notes |
 |---|---|---|
-| Stored inserts loaded on rebuild | not started | `Insert` and its commands are in `primitives::session`; `Mixer::add_insert` is in `primitives::mixer`; `session::steps::build_mixer` does not join them. |
-| Plugins flow | not started | Scan, load, place on a track or bus, parameters, presets and state. The host is `primitives::plugins` (CLAP). |
-| Instrument plugins on MIDI tracks | not started | A monitoring MIDI track gets `MonoSynthNode`, a stand-in. |
-| VST3 hosting | stub | `primitives::plugins::vst3` returns `unsupported()`. The SDK's licence terms have to be reviewed first (CONTRIBUTING). |
-| ARA 2 | shelved, design only | [ARA2_DESIGN.md](ARA2_DESIGN.md). |
+| Instrument plugins on MIDI tracks | not started | A plugin with no audio input is refused as an insert, and a monitoring MIDI track gets `MonoSynthNode`, a stand-in. Needs the plugin as the track's source, fed the track's MIDI. |
+| Host extensions for CLAP | partial | The parameter values and gestures a plugin sends out are heard (`plugin::changes`). A plugin still cannot ask the host to rescan its parameters or resize its latency: `host.get_extension` answers nothing. |
+| A parameter's value as text | not started | `ParamInfo` gives a range, not "3.2 kHz". CLAP's `value_to_text` is not called. |
+| A plugin's window | not started | The flow gives no way to open a plugin's editor. Superb has no UI; the flow has to hand the application what it needs to embed one. |
+| Plugins tested by hand | not started | The flow is tested against the host's in-process test plugin and a mock. No third-party CLAP plugin has been run through it. |
+| A plugin's latency after it changes | not started | The mixer is laid out with the latency the plugin reported when it was last prepared. |
+| Plugin state held in memory | to revisit | Each plugin's state is a file of its own on disk (`plugins/<insert id>.state`), but the bytes of every plugin are also held in the memory, and in the undo history for a removed insert. Large plugins make that heavy. |
+| A scan cache | not started | `plugin::scan` loads every bundle each time. |
+| Live bypass for the built-in effects | not started | `insert::bypass` rebuilds the mixer without a built-in effect (a plugin is switched live). A bypass inside the node would need to keep the limiter's lookahead delay. |
+| VST3 hosting | stub | `primitives::plugins::vst3` returns `unsupported()`. Licence reviewed 2026-11-11: MIT from SDK 3.8.0; the VST name and logo follow Steinberg's trademark rules. The interfaces are declared by hand from the specification (the originality rule), in a module that may use `unsafe`, which CONTRIBUTING has to name. |
+| Audio Units hosting | not started | macOS only. AUv2 units load into the host's process; AUv3 units load out of process by default. Needs a module that may use `unsafe`, and a licence check of what it links before it lands. |
+| ARA 2 | design only | [ARA2_DESIGN.md](ARA2_DESIGN.md). The ARA API is Apache-2.0 and has bindings for CLAP, VST3 and Audio Units. |
 
 ### Mixer and engine
 
 | item | state | notes |
 |---|---|---|
-| Incremental mixer updates | not started | Clip gain, fades and mute rebuild the whole mixer; so does every undo, even of a fader. |
+| Incremental mixer updates | not started | Clip gain, fades and mute rebuild the whole mixer; so does every undo, even of a fader, and every insert added, moved or bypassed, which resets the built-in effects' envelopes. Plugin instances are kept. |
 | Pan law in the memory | not started | A pan law is set on the live strip. A rebuild carries it over, but it is not saved. |
 | Multi-bus and sidechain nodes | not started | A node has one input bus and one output bus. |
-| Flows for the dynamics | primitives only | Compressor, limiter, gate, de-esser and leveler are nodes; they become reachable as inserts in step 1. |
 | Flow for analysis | primitives only | `export::stems` reports loudness; the meters are otherwise yours to call. |
 
 ### Automation
@@ -92,25 +105,19 @@ audio path, a no-alloc test.
 
 ### The API itself
 
-Found in review, not features. Each breaks a rule in CONTRIBUTING's
-"Naming".
+Found in review, not features.
 
 | item | notes |
 |---|---|
-| `session::set_tempo`, `session::set_loop` | Setters are nouns without `set_`. |
-| `send::enable`, `metronome::enable` | Every other switch is the noun with `on`: `track::mute(.., on)`. |
-| The noun "take" | In `record` docs and TERMINOLOGY itself; the word is reserved. |
-| `mixer/console.rs`, "console" in `io::cache` | The word is "mixer". |
-| `TrackSend::pre_fader: bool` | `SendTap` exists; the memory should carry the enum. |
-| `commands::set_track_mute`, `solo`, `arm`, `monitor` | State never enters the undo history, yet these are undoable commands. |
-| `SuperbError::Message(String)` | Used over a hundred times; an application cannot tell "no such device" from "file missing", and I/O errors lose the path. |
-| `src/record.rs` | 2,300 lines: flow, capture, files and recovery in one file. |
+| `SendState::enabled`, `MetronomeState::enabled` | State switches are nouns (`mute`, `arm`, `bypass`); the verbs are `send::on` and `metronome::on`, the fields still say `enabled`. Renaming them touches both file formats. |
+| The example `record_take` | The word is "recording". |
+| `SuperbError::Message(String)` | About ten uses remain: a thread that panicked, a serialiser that failed, a plugin's own error. |
 
 ## How to build any of it
 
 - Flows are free functions over `&mut Session`. Edits go through the undo
   history; state goes through `session::set_state` and never does.
-- `prepare` may allocate, `process` never does. Until step 3, structure
+- `prepare` may allocate, `process` never does. Until step 5, structure
   changes by building a whole mixer and swapping it in.
 - Hardware and codecs stay behind features, off by default.
 - Docs, example and tests land with the code. `docs/flows/<flow>.ref.md`
