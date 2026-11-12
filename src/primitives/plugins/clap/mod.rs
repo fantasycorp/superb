@@ -8,7 +8,10 @@
 //! `instantiate`, `activate`, `deactivate`, `save_state`, `load_state` and
 //! `param_value` are main-thread calls; `process` is the audio-thread call
 //! and never allocates (event lists, channel pointer tables and the
-//! transport event are pre-allocated in `activate`). `start_processing` is
+//! transport event are pre-allocated in `activate`). Input events reach
+//! the plugin in time order, each at its frame inside the block; the
+//! parameter values and gestures the plugin sends back are kept for
+//! `drain_changes`. `start_processing` is
 //! issued lazily from the first `process` call and `stop_processing` from
 //! `deactivate`, so both happen on the thread that drives audio in an
 //! offline render and on the callback thread of a live stream.
@@ -21,18 +24,20 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::primitives::buffers::PlanarBuffer;
 use crate::primitives::graph::{ProcessContext, ProcessStatus};
 use crate::primitives::midi::{MidiEvent, MidiMessage};
+use crate::primitives::plugins::PluginControl;
 use crate::primitives::{Result, SampleRate, SuperbError};
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    clap_event_header, clap_event_midi, clap_event_note, clap_event_param_value,
-    clap_event_transport, clap_input_events, clap_output_events, CLAP_CORE_EVENT_SPACE_ID,
-    CLAP_EVENT_MIDI, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_VALUE,
+    clap_event_header, clap_event_midi, clap_event_note, clap_event_param_gesture,
+    clap_event_param_value, clap_event_transport, clap_input_events, clap_output_events,
+    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI, CLAP_EVENT_NOTE_OFF, CLAP_EVENT_NOTE_ON,
+    CLAP_EVENT_PARAM_GESTURE_BEGIN, CLAP_EVENT_PARAM_GESTURE_END, CLAP_EVENT_PARAM_VALUE,
     CLAP_EVENT_TRANSPORT, CLAP_TRANSPORT_HAS_BEATS_TIMELINE, CLAP_TRANSPORT_HAS_SECONDS_TIMELINE,
     CLAP_TRANSPORT_HAS_TEMPO, CLAP_TRANSPORT_IS_PLAYING,
 };
@@ -54,7 +59,7 @@ use clap_sys::stream::{clap_istream, clap_ostream};
 use clap_sys::version::{clap_version_is_compatible, CLAP_VERSION};
 
 use crate::primitives::plugins::{
-    AudioPortLayout, ParamInfo, PluginDescriptor, PluginFormat, PluginInstance,
+    AudioPortLayout, ParamInfo, PluginChange, PluginDescriptor, PluginFormat, PluginInstance,
 };
 
 #[cfg(test)]
@@ -346,11 +351,13 @@ impl ClapBundle {
             sample_rate: SampleRate::default(),
             latency: 0,
             events: Vec::with_capacity(EVENT_CAPACITY),
+            changes: Vec::with_capacity(EVENT_CAPACITY),
             in_ptrs: Vec::with_capacity(MAX_CHANNELS),
             out_ptrs: Vec::with_capacity(MAX_CHANNELS),
             steady_time: 0,
             last_status: 0,
             process_errors: 0,
+            alive: Arc::new(Mutex::new(true)),
         };
         instance.refresh_params();
         instance.refresh_ports();
@@ -479,6 +486,39 @@ impl ClapEvent {
             ClapEvent::Midi(e) => &e.header,
         }
     }
+
+    fn header_mut(&mut self) -> &mut clap_event_header {
+        match self {
+            ClapEvent::Param(e) => &mut e.header,
+            ClapEvent::Note(e) => &mut e.header,
+            ClapEvent::Midi(e) => &mut e.header,
+        }
+    }
+
+    /// The frame inside the block the event lands on.
+    fn time(&self) -> u32 {
+        match self {
+            ClapEvent::Param(e) => e.header.time,
+            ClapEvent::Note(e) => e.header.time,
+            ClapEvent::Midi(e) => e.header.time,
+        }
+    }
+}
+
+/// Puts `event` in the list behind every event at or before its time, so
+/// the list stays in time order (CLAP requires it) and events at the same
+/// time keep the order they were queued in. Never grows the list: `false`
+/// when it is full.
+fn queue_event(events: &mut Vec<ClapEvent>, event: ClapEvent) -> bool {
+    if events.len() >= events.capacity() {
+        return false;
+    }
+    let at = events
+        .iter()
+        .rposition(|queued| queued.time() <= event.time())
+        .map_or(0, |last| last + 1);
+    events.insert(at, event);
+    true
 }
 
 fn header(size: usize, time: u32, type_: u16) -> clap_event_header {
@@ -547,10 +587,50 @@ unsafe extern "C" fn in_events_get(
 }
 
 unsafe extern "C" fn out_events_try_push(
-    _list: *const clap_output_events,
-    _event: *const clap_event_header,
+    list: *const clap_output_events,
+    event: *const clap_event_header,
 ) -> bool {
-    // Output events (parameter gestures, note ends) are accepted and dropped.
+    if list.is_null() || event.is_null() {
+        return false;
+    }
+    // SAFETY: `ctx` is the `Vec<PluginChange>` set by `ClapPlugin::process`
+    // or `flush_params` for this call, and nothing else touches it until
+    // the call returns.
+    let changes = unsafe { &mut *((*list).ctx as *mut Vec<PluginChange>) };
+    // SAFETY: the plugin hands us a valid event, which starts with a header.
+    let hdr = unsafe { &*event };
+    if hdr.space_id != CLAP_CORE_EVENT_SPACE_ID {
+        return true;
+    }
+    let size = hdr.size as usize;
+    let change = match hdr.type_ {
+        CLAP_EVENT_PARAM_VALUE if size >= size_of::<clap_event_param_value>() => {
+            // SAFETY: the type and the size say this is a parameter value.
+            let e = unsafe { &*(event as *const clap_event_param_value) };
+            PluginChange::Value {
+                id: e.param_id,
+                value: e.value,
+            }
+        }
+        CLAP_EVENT_PARAM_GESTURE_BEGIN | CLAP_EVENT_PARAM_GESTURE_END
+            if size >= size_of::<clap_event_param_gesture>() =>
+        {
+            // SAFETY: the type and the size say this is a parameter gesture.
+            let e = unsafe { &*(event as *const clap_event_param_gesture) };
+            if hdr.type_ == CLAP_EVENT_PARAM_GESTURE_BEGIN {
+                PluginChange::Touched { id: e.param_id }
+            } else {
+                PluginChange::Released { id: e.param_id }
+            }
+        }
+        // Anything else (note ends) is accepted and dropped.
+        _ => return true,
+    };
+    if changes.len() >= changes.capacity() {
+        // Never grown on the audio thread: the plugin is told it did not fit.
+        return false;
+    }
+    changes.push(change);
     true
 }
 
@@ -642,11 +722,17 @@ pub struct ClapPlugin {
     sample_rate: SampleRate,
     latency: usize,
     events: Vec<ClapEvent>,
+    /// What the plugin sent back through its output events, until drained.
+    changes: Vec<PluginChange>,
     in_ptrs: Vec<*mut f32>,
     out_ptrs: Vec<*mut f32>,
     steady_time: i64,
     last_status: i32,
     process_errors: usize,
+    /// `true` until the plugin is destroyed. Shared with every
+    /// [`ClapControl`], which holds the lock for the length of a call, so
+    /// `drop` cannot destroy the plugin under one.
+    alive: Arc<Mutex<bool>>,
 }
 
 // SAFETY: a CLAP instance is designed to be driven from one main thread plus
@@ -790,7 +876,7 @@ impl ClapPlugin {
                 get: Some(in_events_get),
             };
             let out_list = clap_output_events {
-                ctx: ptr::null_mut(),
+                ctx: &mut self.changes as *mut Vec<PluginChange> as *mut c_void,
                 try_push: Some(out_events_try_push),
             };
             // SAFETY: both lists point at stack data that outlives the call.
@@ -824,25 +910,22 @@ impl PluginInstance for ClapPlugin {
     }
 
     fn param_value(&self, id: u32) -> Result<f64> {
-        if self.ext_params.is_null() {
-            return Err(msg("plugin has no params extension"));
-        }
-        // SAFETY: extension pointer from the plugin.
-        let get_value = unsafe { (*self.ext_params).get_value }
-            .ok_or_else(|| msg("params.get_value is missing"))?;
-        let mut value = 0.0;
-        // SAFETY: `value` is a valid out-parameter.
-        if unsafe { get_value(self.plugin, id, &mut value) } {
-            Ok(value)
-        } else {
-            Err(SuperbError::NotFound {
-                kind: "param",
-                id: id as u64,
-            })
-        }
+        // SAFETY: `plugin` and its extension pointers are valid while
+        // `self` lives.
+        unsafe { param_value(self.plugin, self.ext_params, id) }
     }
 
     fn set_param(&mut self, id: u32, value: f64) -> Result<()> {
+        self.set_param_at(id, value, 0)
+    }
+
+    fn drain_changes(&mut self, sink: &mut dyn FnMut(PluginChange)) {
+        for change in self.changes.drain(..) {
+            sink(change);
+        }
+    }
+
+    fn set_param_at(&mut self, id: u32, value: f64, frame: u32) -> Result<()> {
         let index = self
             .params
             .iter()
@@ -851,16 +934,11 @@ impl PluginInstance for ClapPlugin {
                 kind: "param",
                 id: id as u64,
             })?;
-        if self.events.len() >= self.events.capacity() {
-            return Err(SuperbError::CapacityExceeded {
-                what: "plugin event queue",
-                capacity: self.events.capacity(),
-            });
-        }
-        self.events.push(ClapEvent::Param(clap_event_param_value {
+        let event = ClapEvent::Param(clap_event_param_value {
             header: header(
                 size_of::<clap_event_param_value>(),
-                0,
+                // Nothing is inside a block while inactive.
+                if self.active { frame } else { 0 },
                 CLAP_EVENT_PARAM_VALUE,
             ),
             param_id: id,
@@ -870,7 +948,13 @@ impl PluginInstance for ClapPlugin {
             channel: -1,
             key: -1,
             value,
-        }));
+        });
+        if !queue_event(&mut self.events, event) {
+            return Err(SuperbError::CapacityExceeded {
+                what: "plugin event queue",
+                capacity: self.events.capacity(),
+            });
+        }
         if !self.active {
             self.flush_params();
         }
@@ -950,12 +1034,19 @@ impl PluginInstance for ClapPlugin {
             return ProcessStatus::Silent;
         };
 
-        // MIDI after the (time 0) parameter events; the buffer is already frame-sorted.
+        // MIDI goes in among the parameter events by frame; at the same
+        // frame a parameter event comes first.
         for ev in ctx.midi.iter() {
-            if self.events.len() >= self.events.capacity() {
+            if !queue_event(&mut self.events, event_from_midi(ev)) {
                 break;
             }
-            self.events.push(event_from_midi(ev));
+        }
+        // No event may lie past the block: one that does lands on its last
+        // frame. The order is kept, the list being in time order already.
+        let last_frame = (ctx.frames as u32).saturating_sub(1);
+        for event in &mut self.events {
+            let header = event.header_mut();
+            header.time = header.time.min(last_frame);
         }
 
         self.in_ptrs.clear();
@@ -996,7 +1087,7 @@ impl PluginInstance for ClapPlugin {
             get: Some(in_events_get),
         };
         let out_list = clap_output_events {
-            ctx: ptr::null_mut(),
+            ctx: &mut self.changes as *mut Vec<PluginChange> as *mut c_void,
             try_push: Some(out_events_try_push),
         };
         let proc_desc = clap_process {
@@ -1032,49 +1123,186 @@ impl PluginInstance for ClapPlugin {
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>> {
-        if self.ext_state.is_null() {
-            return Err(msg("plugin has no state extension"));
-        }
-        // SAFETY: extension pointer from the plugin.
-        let save = unsafe { (*self.ext_state).save }.ok_or_else(|| msg("state.save is missing"))?;
-        let mut out = Vec::new();
-        let stream = clap_ostream {
-            ctx: &mut out as *mut Vec<u8> as *mut c_void,
-            write: Some(ostream_write),
-        };
-        // SAFETY: the stream points at `out`, which outlives the call.
-        if unsafe { save(self.plugin, &stream) } {
-            Ok(out)
-        } else {
-            Err(msg(format!("{}: state.save failed", self.descriptor.name)))
-        }
+        // SAFETY: `plugin` and its extension pointers are valid while
+        // `self` lives.
+        unsafe { save_state(self.plugin, self.ext_state, &self.descriptor.name) }
     }
 
     fn load_state(&mut self, bytes: &[u8]) -> Result<()> {
-        if self.ext_state.is_null() {
-            return Err(msg("plugin has no state extension"));
+        // SAFETY: as in `save_state`.
+        unsafe { load_state(self.plugin, self.ext_state, &self.descriptor.name, bytes) }
+    }
+
+    fn control(&self) -> Option<Box<dyn PluginControl>> {
+        Some(Box::new(ClapControl {
+            plugin: self.plugin,
+            ext_params: self.ext_params,
+            ext_state: self.ext_state,
+            name: self.descriptor.name.clone(),
+            alive: Arc::clone(&self.alive),
+            _bundle: Arc::clone(&self.bundle),
+        }))
+    }
+}
+
+/// `params.get_value` for one parameter.
+///
+/// # Safety
+/// `plugin` is a live plugin and `ext_params` is null or the params
+/// extension that plugin returned.
+unsafe fn param_value(
+    plugin: *const clap_plugin,
+    ext_params: *const clap_plugin_params,
+    id: u32,
+) -> Result<f64> {
+    if ext_params.is_null() {
+        return Err(msg("plugin has no params extension"));
+    }
+    // SAFETY: extension pointer from the plugin (caller's contract).
+    let get_value =
+        unsafe { (*ext_params).get_value }.ok_or_else(|| msg("params.get_value is missing"))?;
+    let mut value = 0.0;
+    // SAFETY: `value` is a valid out-parameter; `plugin` is live.
+    if unsafe { get_value(plugin, id, &mut value) } {
+        Ok(value)
+    } else {
+        Err(SuperbError::NotFound {
+            kind: "param",
+            id: id as u64,
+        })
+    }
+}
+
+/// `state.save` into a fresh buffer.
+///
+/// # Safety
+/// `plugin` is a live plugin and `ext_state` is null or the state
+/// extension that plugin returned.
+unsafe fn save_state(
+    plugin: *const clap_plugin,
+    ext_state: *const clap_plugin_state,
+    name: &str,
+) -> Result<Vec<u8>> {
+    if ext_state.is_null() {
+        return Err(msg("plugin has no state extension"));
+    }
+    // SAFETY: extension pointer from the plugin (caller's contract).
+    let save = unsafe { (*ext_state).save }.ok_or_else(|| msg("state.save is missing"))?;
+    let mut out = Vec::new();
+    let stream = clap_ostream {
+        ctx: &mut out as *mut Vec<u8> as *mut c_void,
+        write: Some(ostream_write),
+    };
+    // SAFETY: the stream points at `out`, which outlives the call.
+    if unsafe { save(plugin, &stream) } {
+        Ok(out)
+    } else {
+        Err(msg(format!("{name}: state.save failed")))
+    }
+}
+
+/// `state.load` from `bytes`.
+///
+/// # Safety
+/// As [`save_state`].
+unsafe fn load_state(
+    plugin: *const clap_plugin,
+    ext_state: *const clap_plugin_state,
+    name: &str,
+    bytes: &[u8],
+) -> Result<()> {
+    if ext_state.is_null() {
+        return Err(msg("plugin has no state extension"));
+    }
+    // SAFETY: extension pointer from the plugin (caller's contract).
+    let load = unsafe { (*ext_state).load }.ok_or_else(|| msg("state.load is missing"))?;
+    let mut cursor = ReadCursor {
+        data: bytes,
+        pos: 0,
+    };
+    let stream = clap_istream {
+        ctx: &mut cursor as *mut ReadCursor<'_> as *mut c_void,
+        read: Some(istream_read),
+    };
+    // SAFETY: the stream points at `cursor`, which outlives the call.
+    if unsafe { load(plugin, &stream) } {
+        Ok(())
+    } else {
+        Err(msg(format!("{name}: state.load failed")))
+    }
+}
+
+/// The main-thread side of a [`ClapPlugin`] that is processing on the
+/// audio thread. Made by [`PluginInstance::control`].
+///
+/// CLAP splits a plugin's functions between a main thread and an audio
+/// thread and lets the two run at once: reading a parameter and saving or
+/// loading state are main-thread functions a host may call while `process`
+/// runs. This handle makes exactly those calls.
+pub struct ClapControl {
+    plugin: *const clap_plugin,
+    ext_params: *const clap_plugin_params,
+    ext_state: *const clap_plugin_state,
+    name: String,
+    alive: Arc<Mutex<bool>>,
+    /// Keeps the library mapped for as long as the handle exists.
+    _bundle: Arc<ClapBundle>,
+}
+
+// SAFETY: the handle only calls the plugin's main-thread functions
+// (`params.get_value`, `state.save`, `state.load`), which CLAP allows
+// beside the audio thread's `process`. The pointers are dereferenced only
+// while `alive` is locked and `true`, and `ClapPlugin::drop` takes the
+// same lock before it destroys the plugin, so they are never used after.
+unsafe impl Send for ClapControl {}
+
+impl ClapControl {
+    /// Runs `call` with the plugin kept alive, or fails if it is gone.
+    fn with_plugin<T>(&self, call: impl FnOnce() -> Result<T>) -> Result<T> {
+        let alive = self
+            .alive
+            .lock()
+            .map_err(|_| msg("a plugin call panicked earlier"))?;
+        if !*alive {
+            return Err(SuperbError::InvalidState {
+                why: "the plugin instance has been dropped",
+            });
         }
-        // SAFETY: extension pointer from the plugin.
-        let load = unsafe { (*self.ext_state).load }.ok_or_else(|| msg("state.load is missing"))?;
-        let mut cursor = ReadCursor {
-            data: bytes,
-            pos: 0,
-        };
-        let stream = clap_istream {
-            ctx: &mut cursor as *mut ReadCursor<'_> as *mut c_void,
-            read: Some(istream_read),
-        };
-        // SAFETY: the stream points at `cursor`, which outlives the call.
-        if unsafe { load(self.plugin, &stream) } {
-            Ok(())
-        } else {
-            Err(msg(format!("{}: state.load failed", self.descriptor.name)))
-        }
+        call()
+    }
+}
+
+impl PluginControl for ClapControl {
+    fn param_value(&self, id: u32) -> Result<f64> {
+        // SAFETY: the plugin is alive for the length of the call.
+        self.with_plugin(|| unsafe { param_value(self.plugin, self.ext_params, id) })
+    }
+
+    fn save_state(&self) -> Result<Vec<u8>> {
+        // SAFETY: as in `param_value`.
+        self.with_plugin(|| unsafe { save_state(self.plugin, self.ext_state, &self.name) })
+    }
+
+    fn load_state(&self, bytes: &[u8]) -> Result<()> {
+        // SAFETY: as in `param_value`.
+        self.with_plugin(|| unsafe { load_state(self.plugin, self.ext_state, &self.name, bytes) })
+    }
+}
+
+impl core::fmt::Debug for ClapControl {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ClapControl")
+            .field("name", &self.name)
+            .finish()
     }
 }
 
 impl Drop for ClapPlugin {
     fn drop(&mut self) {
+        // Wait out any call a `ClapControl` is in, and stop later ones.
+        let gate = Arc::clone(&self.alive);
+        let mut alive = gate.lock().unwrap_or_else(|e| e.into_inner());
+        *alive = false;
         self.deactivate();
         // SAFETY: destroy is the last call on a plugin; `plugin` is valid until here.
         if let Some(destroy) = unsafe { (*self.plugin).destroy } {
@@ -1308,6 +1536,68 @@ mod tests {
     }
 
     #[test]
+    fn a_parameter_change_lands_on_its_frame() {
+        let _guard = serial();
+        let b = bundle();
+        let mut p = b.instantiate(TEST_PLUGIN_ID).unwrap();
+        p.activate(R, 8).unwrap();
+        // Queued out of time order; one lies past the block.
+        p.set_param_at(7, 0.0, 6).unwrap();
+        p.set_param_at(7, 0.5, 2).unwrap();
+        p.set_param_at(7, 2.0, 99).unwrap();
+        let midi = MidiEventBuffer::with_capacity(0);
+        let input = ramp(8);
+        let mut output = PlanarBuffer::new(2, 8);
+        assert_eq!(
+            p.process(&ctx(&midi, 8, false), &input, &mut output),
+            ProcessStatus::Normal
+        );
+        // Unity for two frames, half from frame 2, silent at frame 6, and
+        // the late one on the last frame.
+        assert_eq!(
+            output.channel(0),
+            &[1.0, 2.0, 1.5, 2.0, 2.5, 3.0, 0.0, 16.0]
+        );
+        // Two changes on one frame keep the order they were queued in.
+        p.set_param_at(7, 0.5, 4).unwrap();
+        p.set_param_at(7, 1.0, 4).unwrap();
+        p.process(&ctx(&midi, 8, false), &input, &mut output);
+        assert_eq!(output.channel(0), &[2.0, 4.0, 6.0, 8.0, 5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn what_the_plugin_changes_itself_comes_back_to_the_host() {
+        let _guard = serial();
+        let b = bundle();
+        let mut p = b.instantiate(TEST_PLUGIN_ID).unwrap();
+        p.activate(R, 8).unwrap();
+        let midi = MidiEventBuffer::with_capacity(0);
+        let input = ramp(8);
+        let mut output = PlanarBuffer::new(2, 8);
+        let mut seen = Vec::new();
+        p.set_param(7, 0.5).unwrap();
+        p.process(&ctx(&midi, 8, false), &input, &mut output);
+        p.drain_changes(&mut |change| seen.push(change));
+        assert!(seen.is_empty(), "the host's own change is not echoed");
+
+        test_plugin::turn_gain_inside(0.25);
+        p.process(&ctx(&midi, 8, false), &input, &mut output);
+        assert_eq!(p.param_value(7).unwrap(), 0.25);
+        p.drain_changes(&mut |change| seen.push(change));
+        assert_eq!(
+            seen,
+            [
+                PluginChange::Touched { id: 7 },
+                PluginChange::Value { id: 7, value: 0.25 },
+                PluginChange::Released { id: 7 },
+            ]
+        );
+        seen.clear();
+        p.drain_changes(&mut |change| seen.push(change));
+        assert!(seen.is_empty(), "handed over once");
+    }
+
+    #[test]
     fn state_round_trips_between_instances() {
         let _guard = serial();
         let b = bundle();
@@ -1330,6 +1620,35 @@ mod tests {
     }
 
     #[test]
+    fn the_control_handle_reads_and_saves_beside_the_instance_and_fails_after_it() {
+        let _guard = serial();
+        let b = bundle();
+        let mut a = b.instantiate(TEST_PLUGIN_ID).unwrap();
+        let control = a.control().unwrap();
+        a.set_param(7, 1.5).unwrap();
+        assert_eq!(control.param_value(7).unwrap(), 1.5);
+        let state = control.save_state().unwrap();
+        // The instance goes to another thread, as it does into a graph; the
+        // handle stays here.
+        let worker = std::thread::spawn(move || {
+            a.set_param(7, 0.5).unwrap();
+            a
+        });
+        let a = worker.join().unwrap();
+        assert_eq!(control.param_value(7).unwrap(), 0.5);
+        control.load_state(&state).unwrap();
+        assert_eq!(a.param_value(7).unwrap(), 1.5);
+        drop(a);
+        assert_eq!(test_plugin::live_instances(), 0);
+        assert!(matches!(
+            control.param_value(7),
+            Err(SuperbError::InvalidState { .. })
+        ));
+        assert!(control.save_state().is_err());
+        assert!(control.load_state(&state).is_err());
+    }
+
+    #[test]
     fn plugin_node_runs_inside_a_graph_with_compensation() {
         let _guard = serial();
         let b = bundle();
@@ -1348,7 +1667,7 @@ mod tests {
             16,
             "reported through Node::latency_frames after activation"
         );
-        tx.push(crate::primitives::plugins::ParamChange { id: 7, value: 2.0 })
+        tx.push(crate::primitives::plugins::ParamChange::new(7, 2.0))
             .unwrap();
         g.process(
             BlockTime::free_running(),

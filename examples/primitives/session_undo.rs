@@ -5,6 +5,7 @@
 //! cargo run --example session_undo
 //! ```
 
+use superb::primitives::mixer::SendTap;
 use superb::primitives::session::commands::{
     self, AddClip, AddMarker, AddSend, AddTrack, MoveClip, SetTempo, SetTrackOutput,
 };
@@ -158,7 +159,7 @@ fn main() -> Result<()> {
     let send = memory.allocate_send_id();
     history.push(
         &mut memory,
-        AddSend::new(drums, TrackSend::with_id(send, verb).pre_fader()),
+        AddSend::new(drums, TrackSend::with_id(send, verb).tap(SendTap::PreFader)),
     )?;
     for db in [-3.0, -6.0, -9.0] {
         history.push(&mut memory, commands::set_send_level_db(send, db))?;
@@ -169,7 +170,7 @@ fn main() -> Result<()> {
     assert_eq!(memory.send_count(), 1);
     assert_eq!(memory.track(verb)?.kind, TrackKind::Bus);
     assert_eq!(memory.track(keys)?.output(), Some(verb));
-    assert!(memory.send(send)?.pre_fader);
+    assert_eq!(memory.send(send)?.tap, SendTap::PreFader);
     assert_eq!(memory.send(send)?.bus(), verb);
     assert!((memory.send(send)?.state.level_db + 9.0).abs() < 1e-6);
     assert_eq!(memory.end_position().samples(), 240_000);

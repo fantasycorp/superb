@@ -73,9 +73,10 @@ pub fn add(
     let source = content.into();
     let (name, length) = match &source {
         ClipSource::Audio { path, offset } => {
-            let audio = session.audio.get(path).ok_or_else(|| {
-                SuperbError::Message(format!("no audio named {:?} is in memory", path.display()))
-            })?;
+            let audio = session
+                .audio
+                .get(path)
+                .ok_or_else(|| SuperbError::MissingAudio { key: path.clone() })?;
             let name = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())

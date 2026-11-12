@@ -1,8 +1,8 @@
 //! VST3 hosting — **stub**.
 //!
 //! Hosting VST3 plugins means binding to the format's COM-style interfaces,
-//! and shipping such a host means accepting the VST 3 SDK licence. Neither
-//! has been done here. Every entry point returns [`unsupported`] and
+//! which has not been done here. (The VST 3 SDK is MIT-licensed from 3.8.0,
+//! so the licence no longer stands in the way.) Every entry point returns [`unsupported`] and
 //! [`AVAILABLE`] is `false`, so an application can show an honest message
 //! instead of an empty plugin list.
 //!
@@ -26,9 +26,7 @@ pub const AVAILABLE: bool = false;
 
 /// The error every VST3 entry point returns.
 pub fn unsupported() -> SuperbError {
-    SuperbError::Message(
-        "VST3 hosting is not implemented; only CLAP plugins can be loaded (see docs/primitives/plugins.md)".into(),
-    )
+    SuperbError::Unsupported("VST3 hosting is not implemented; only CLAP plugins can be loaded (see docs/primitives/plugins.md)".into())
 }
 
 /// Would load a `.vst3` bundle. Always fails with [`unsupported`].

@@ -835,9 +835,7 @@ impl DeEsser {
     fn design(&mut self) {
         let hz = self.params.frequency_hz.get();
         let filter = Biquad::band_pass(f64::from(self.rate), f64::from(hz), 1.0);
-        for f in &mut self.sidechain {
-            *f = filter;
-        }
+        self.sidechain.fill(filter);
         self.designed_hz = hz;
     }
 }

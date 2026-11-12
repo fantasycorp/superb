@@ -29,11 +29,11 @@ use crate::primitives::{Result, SampleRate, SuperbError};
 use super::AudioFile;
 
 fn err(context: &str, e: impl std::fmt::Display) -> SuperbError {
-    SuperbError::Message(format!("{context}: {e}"))
+    SuperbError::format(None, format!("{context}: {e}"))
 }
 
 pub(super) fn decode_path(path: &Path) -> Result<AudioFile> {
-    let file = File::open(path).map_err(|e| err("open audio file", e))?;
+    let file = File::open(path).map_err(|e| SuperbError::io("open", path, &e))?;
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
@@ -76,13 +76,14 @@ fn decode_source<'s>(source: Box<dyn MediaSource + 's>, hint: &Hint) -> Result<A
 
     let track = reader
         .default_track(TrackType::Audio)
-        .ok_or_else(|| SuperbError::Message("no audio track in file".into()))?;
+        .ok_or_else(|| SuperbError::format(None, "no audio track in file"))?;
     let track_id = track.id;
     let params = match &track.codec_params {
         Some(CodecParameters::Audio(p)) => p.clone(),
         _ => {
-            return Err(SuperbError::Message(
-                "audio track has no usable codec parameters".into(),
+            return Err(SuperbError::format(
+                None,
+                "audio track has no usable codec parameters",
             ))
         }
     };
@@ -141,11 +142,14 @@ fn decode_source<'s>(source: Box<dyn MediaSource + 's>, hint: &Hint) -> Result<A
                 .map(|p| Vec::with_capacity(declared_frames.unwrap_or(p.len())))
                 .collect();
         } else if planes.len() != scratch.len() {
-            return Err(SuperbError::Message(format!(
-                "channel count changed mid-stream ({} -> {})",
-                planes.len(),
-                scratch.len()
-            )));
+            return Err(SuperbError::format(
+                None,
+                format!(
+                    "channel count changed mid-stream ({} -> {})",
+                    planes.len(),
+                    scratch.len()
+                ),
+            ));
         }
         for (dst, src) in planes.iter_mut().zip(&scratch) {
             dst.extend_from_slice(src);
@@ -153,7 +157,7 @@ fn decode_source<'s>(source: Box<dyn MediaSource + 's>, hint: &Hint) -> Result<A
     }
 
     let hz =
-        rate_hz.ok_or_else(|| SuperbError::Message("audio file declares no sample rate".into()))?;
+        rate_hz.ok_or_else(|| SuperbError::format(None, "audio file declares no sample rate"))?;
     let sample_rate = SampleRate::new(hz)?;
     if planes.is_empty() {
         let channels = params

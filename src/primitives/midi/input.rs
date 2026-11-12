@@ -13,7 +13,7 @@
 //! ```ignore
 //! match superb::primitives::midi::list_input_ports() {
 //!     Ok(_ports) => {}
-//!     Err(error) => assert!(matches!(error, superb::primitives::SuperbError::Message(_))),
+//!     Err(error) => assert!(matches!(error, superb::primitives::SuperbError::Device(_))),
 //! }
 //! ```
 
@@ -44,12 +44,12 @@ pub struct MidiPortInfo {
 /// Lists the MIDI input ports currently visible to the system.
 ///
 /// # Errors
-/// Returns [`SuperbError::Message`] if the underlying MIDI backend could not
+/// Returns [`SuperbError::Device`] if the underlying MIDI backend could not
 /// be initialised (for example, no ALSA sequencer is available). This is
 /// expected in headless CI environments.
 pub fn list_input_ports() -> Result<Vec<MidiPortInfo>> {
     let midi_in = MidiInput::new("superb-midi-list").map_err(|e| {
-        SuperbError::Message(format!("failed to initialise MIDI input backend: {e}"))
+        SuperbError::Device(format!("failed to initialise MIDI input backend: {e}"))
     })?;
     let ports = midi_in.ports();
     let mut out = Vec::with_capacity(ports.len());
@@ -85,7 +85,7 @@ impl MidiInputBridge {
     /// [`MidiInputBridge::dropped`] — the callback thread never blocks.
     ///
     /// # Errors
-    /// Returns [`SuperbError::Message`] if the MIDI backend cannot be
+    /// Returns [`SuperbError::Device`] if the MIDI backend cannot be
     /// initialised or the port cannot be opened, or
     /// [`SuperbError::NotFound`] if `port_index` is out of range.
     pub fn connect(
@@ -93,7 +93,7 @@ impl MidiInputBridge {
         queue_capacity: usize,
     ) -> Result<(MidiInputBridge, Consumer<TimestampedMessage>)> {
         let mut midi_in = MidiInput::new("superb-midi-input").map_err(|e| {
-            SuperbError::Message(format!("failed to initialise MIDI input backend: {e}"))
+            SuperbError::Device(format!("failed to initialise MIDI input backend: {e}"))
         })?;
         midi_in.ignore(Ignore::None);
 
@@ -128,7 +128,7 @@ impl MidiInputBridge {
                 (),
             )
             .map_err(|e| {
-                SuperbError::Message(format!("failed to connect to MIDI input port: {e}"))
+                SuperbError::Device(format!("failed to connect to MIDI input port: {e}"))
             })?;
 
         Ok((
@@ -168,7 +168,7 @@ mod tests {
         match list_input_ports() {
             Ok(_ports) => {}
             Err(e) => assert!(
-                matches!(e, SuperbError::Message(_)),
+                matches!(e, SuperbError::Device(_)),
                 "unexpected error variant: {e:?}"
             ),
         }

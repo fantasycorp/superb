@@ -99,7 +99,7 @@ pub struct SendInfo {
     pub params: Arc<SendParams>,
 }
 
-/// A mixing console on top of an [`AudioGraph`].
+/// A mixer on top of an [`AudioGraph`].
 ///
 /// Pan-law defaults: tracks use [`PanLaw::ConstantPower`] (−3 dB centre,
 /// right for mono sources), buses and the master use [`PanLaw::Balance`]

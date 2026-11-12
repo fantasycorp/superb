@@ -4,13 +4,15 @@
 
 use std::ffi::{c_char, c_void, CStr};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    clap_event_note, clap_event_param_value, clap_input_events, clap_output_events,
-    CLAP_EVENT_MIDI, CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_VALUE, CLAP_TRANSPORT_IS_PLAYING,
+    clap_event_header, clap_event_note, clap_event_param_gesture, clap_event_param_value,
+    clap_input_events, clap_output_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_MIDI,
+    CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_GESTURE_BEGIN, CLAP_EVENT_PARAM_GESTURE_END,
+    CLAP_EVENT_PARAM_VALUE, CLAP_TRANSPORT_IS_PLAYING,
 };
 use clap_sys::ext::audio_ports::{
     clap_audio_port_info, clap_plugin_audio_ports, CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS,
@@ -43,6 +45,10 @@ static RAW_MIDI: AtomicUsize = AtomicUsize::new(0);
 static TRANSPORT_PLAYING: AtomicBool = AtomicBool::new(false);
 static LAST_NOTE: AtomicU32 = AtomicU32::new(0);
 static LAST_HOST: AtomicUsize = AtomicUsize::new(0);
+/// A gain the "user" set in the plugin's own view, as `f64` bits, and
+/// whether one is waiting for the next block.
+static TURNED_TO: AtomicU64 = AtomicU64::new(0);
+static TURNED: AtomicBool = AtomicBool::new(false);
 
 /// The counters here are global, so every test that creates an instance
 /// holds this for as long as it runs: one at a time.
@@ -71,6 +77,13 @@ pub fn saw_transport_playing() -> bool {
 pub fn last_note() -> (u8, u8, u32) {
     let v = LAST_NOTE.load(Ordering::SeqCst);
     ((v >> 24) as u8, ((v >> 16) & 0xFF) as u8, v & 0xFFFF)
+}
+/// Turns the gain from inside the plugin, as a user would in its own view:
+/// the next block any instance processes takes the value and tells the
+/// host with a gesture begin, the value and a gesture end.
+pub fn turn_gain_inside(value: f64) {
+    TURNED_TO.store(value.to_bits(), Ordering::SeqCst);
+    TURNED.store(true, Ordering::SeqCst);
 }
 /// Makes the most recently created instance call `host.request_restart`.
 pub fn ask_for_restart() {
@@ -224,6 +237,22 @@ unsafe extern "C" fn p_on_main_thread(_p: *const clap_plugin) {}
 /// # Safety
 /// `list` must be a valid input event list.
 unsafe fn apply_events(g: &mut Gain, list: *const clap_input_events) {
+    let mut next = 0;
+    // SAFETY: guaranteed by the caller.
+    unsafe { apply_events_until(g, list, &mut next, u32::MAX) };
+}
+
+/// Applies the events from index `*next` on whose time is at or before
+/// `time`, and leaves `*next` at the first one that is later.
+///
+/// # Safety
+/// `list` must be a valid input event list.
+unsafe fn apply_events_until(
+    g: &mut Gain,
+    list: *const clap_input_events,
+    next: &mut u32,
+    time: u32,
+) {
     if list.is_null() {
         return;
     }
@@ -233,13 +262,18 @@ unsafe fn apply_events(g: &mut Gain, list: *const clap_input_events) {
         return;
     };
     let n = unsafe { size(list) };
-    for i in 0..n {
-        let h = unsafe { get(list, i) };
+    while *next < n {
+        let h = unsafe { get(list, *next) };
         if h.is_null() {
+            *next += 1;
             continue;
         }
         // SAFETY: every event starts with a header; the type tells us the full struct.
         let hdr = unsafe { &*h };
+        if hdr.time > time {
+            return;
+        }
+        *next += 1;
         match hdr.type_ {
             CLAP_EVENT_PARAM_VALUE => {
                 let e = unsafe { &*(h as *const clap_event_param_value) };
@@ -263,6 +297,49 @@ unsafe fn apply_events(g: &mut Gain, list: *const clap_input_events) {
     }
 }
 
+/// Sends the host a gesture begin, the gain and a gesture end.
+///
+/// # Safety
+/// `out` must be null or a valid output event list.
+unsafe fn tell_host_of_gain(gain: f64, out: *const clap_output_events) {
+    if out.is_null() {
+        return;
+    }
+    // SAFETY: guaranteed by the caller.
+    let Some(push) = (unsafe { (*out).try_push }) else {
+        return;
+    };
+    let header = |size: usize, type_: u16| clap_event_header {
+        size: size as u32,
+        time: 0,
+        space_id: CLAP_CORE_EVENT_SPACE_ID,
+        type_,
+        flags: 0,
+    };
+    let gesture = |type_: u16| clap_event_param_gesture {
+        header: header(size_of::<clap_event_param_gesture>(), type_),
+        param_id: PARAM_GAIN,
+    };
+    let begin = gesture(CLAP_EVENT_PARAM_GESTURE_BEGIN);
+    let value = clap_event_param_value {
+        header: header(size_of::<clap_event_param_value>(), CLAP_EVENT_PARAM_VALUE),
+        param_id: PARAM_GAIN,
+        cookie: ptr::null_mut(),
+        note_id: -1,
+        port_index: -1,
+        channel: -1,
+        key: -1,
+        value: gain,
+    };
+    let end = gesture(CLAP_EVENT_PARAM_GESTURE_END);
+    // SAFETY: each event is a whole struct on this stack, read during the call.
+    unsafe {
+        push(out, &begin.header);
+        push(out, &value.header);
+        push(out, &end.header);
+    }
+}
+
 unsafe extern "C" fn p_process(
     p: *const clap_plugin,
     process: *const clap_process,
@@ -277,8 +354,13 @@ unsafe extern "C" fn p_process(
             Ordering::SeqCst,
         );
     }
-    unsafe { apply_events(g, pr.in_events) };
+    if TURNED.swap(false, Ordering::SeqCst) {
+        g.gain = f64::from_bits(TURNED_TO.load(Ordering::SeqCst));
+        // SAFETY: the host's output list is valid for the call.
+        unsafe { tell_host_of_gain(g.gain, pr.out_events) };
+    }
     if pr.audio_inputs_count == 0 || pr.audio_outputs_count == 0 {
+        unsafe { apply_events(g, pr.in_events) };
         return CLAP_PROCESS_SLEEP;
     }
     let input: &clap_audio_buffer = unsafe { &*pr.audio_inputs };
@@ -287,13 +369,16 @@ unsafe extern "C" fn p_process(
     let channels = input.channel_count.min(output.channel_count) as usize;
     let all_constant =
         input.channel_count > 0 && input.constant_mask == (u64::MAX >> (64 - input.channel_count));
-    for ch in 0..channels {
-        // SAFETY: the host guarantees `channel_count` valid channel pointers
-        // of `frames_count` samples each.
-        unsafe {
-            let src = *input.data32.add(ch);
-            let dst = *output.data32.add(ch);
-            for f in 0..frames {
+    // Frame by frame, so an event takes effect on the frame it is timed at.
+    let mut next = 0;
+    for f in 0..frames {
+        unsafe { apply_events_until(g, pr.in_events, &mut next, f as u32) };
+        for ch in 0..channels {
+            // SAFETY: the host guarantees `channel_count` valid channel
+            // pointers of `frames_count` samples each.
+            unsafe {
+                let src = *input.data32.add(ch);
+                let dst = *output.data32.add(ch);
                 *dst.add(f) = if all_constant {
                     0.0
                 } else {
@@ -302,6 +387,8 @@ unsafe extern "C" fn p_process(
             }
         }
     }
+    // Whatever is left (an empty block, an event past it).
+    unsafe { apply_events_until(g, pr.in_events, &mut next, u32::MAX) };
     if all_constant {
         CLAP_PROCESS_SLEEP
     } else {

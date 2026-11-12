@@ -185,6 +185,32 @@ impl AudioGraph {
         id
     }
 
+    /// Moves what the nodes of `from` carry into the nodes of this graph
+    /// that answer to the same key and hold nothing yet (see
+    /// [`Node::carry`]). Called by the live graph just before this graph
+    /// replaces `from`, on the audio thread: it moves pointers and
+    /// allocates nothing. A node of `from` whose key no node here asks for
+    /// keeps what it has, and is freed with its graph on the control
+    /// thread.
+    pub fn adopt_from(&mut self, from: &mut AudioGraph) {
+        for slot in &mut self.slots {
+            let Some((key, mine)) = slot.node.carry() else {
+                continue;
+            };
+            if mine.is_some() {
+                continue;
+            }
+            for other in &mut from.slots {
+                if let Some((theirs_key, theirs)) = other.node.carry() {
+                    if theirs_key == key && theirs.is_some() {
+                        core::mem::swap(mine, theirs);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     /// Removes a node and all edges touching it. Returns the node.
     pub fn remove_node(&mut self, id: NodeId) -> Result<Box<dyn Node>> {
         debug_assert_not_rt("AudioGraph::remove_node");

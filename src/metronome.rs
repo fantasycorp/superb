@@ -21,9 +21,9 @@
 //! ));
 //! let mut session = session::create(&folder, SampleRate::HZ_48K, 64)?;
 //! // 600 bpm puts the next beat well after the first tick has died away.
-//! session::set_tempo(&mut session, 600.0)?;
+//! session::tempo(&mut session, 600.0)?;
 //! let steps = session.history.undo_len();
-//! metronome::enable(&mut session, true)?;
+//! metronome::on(&mut session, true)?;
 //! assert!(session.memory.metronome().enabled);
 //! assert_eq!(session.history.undo_len(), steps);
 //! metronome::level(&mut session, -6.0206)?;
@@ -48,7 +48,7 @@ use crate::session::Session;
 ///
 /// Made of: `MetronomeState::enabled` through `session::set_state` →
 /// `ClickParams::set_enabled`.
-pub fn enable(session: &mut Session, on: bool) -> Result<()> {
+pub fn on(session: &mut Session, on: bool) -> Result<()> {
     crate::session::set_state(session, |m| {
         m.metronome_mut().enabled = on;
         Ok(())
@@ -94,9 +94,9 @@ mod tests {
             session::create(session::scratch("click"), SampleRate::HZ_48K, 64).unwrap();
         // 600 bpm: a beat every 4 800 samples, so the second beat lands in
         // block 75, well after the first tick (50 ms) has died away.
-        session::set_tempo(&mut session, 600.0).unwrap();
+        session::tempo(&mut session, 600.0).unwrap();
         let steps = session.history.undo_len();
-        enable(&mut session, true).unwrap();
+        on(&mut session, true).unwrap();
         assert!(session.memory.metronome().enabled);
         assert_eq!(session.history.undo_len(), steps, "state, not an edit");
         level(&mut session, -6.0206).unwrap();
@@ -121,7 +121,7 @@ mod tests {
 
         // Off: silent at once, no rebuild. The level is an edit and rides
         // memory.json; the switch and the count-in are state and do not.
-        enable(&mut session, false).unwrap();
+        on(&mut session, false).unwrap();
         assert!(session::steps::render_blocks(&mut session, 40)
             .unwrap()
             .is_silent());

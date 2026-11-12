@@ -21,7 +21,7 @@ pub fn input_devices() -> Result<Vec<DeviceInfo>> {
         .map(|d| d.name().to_owned());
     let devices = host
         .input_devices()
-        .map_err(|e| SuperbError::Message(format!("enumerate devices: {e}")))?;
+        .map_err(|e| SuperbError::Device(format!("enumerate devices: {e}")))?;
     Ok(devices
         .filter_map(|d| {
             let desc = d.description().ok()?;
@@ -107,16 +107,20 @@ impl InputStream {
         let device = match &config.device_name {
             Some(name) => host
                 .input_devices()
-                .map_err(|e| SuperbError::Message(format!("enumerate devices: {e}")))?
+                .map_err(|e| SuperbError::Device(format!("enumerate devices: {e}")))?
                 .find(|d| {
                     d.description()
                         .map(|desc| desc.name() == name)
                         .unwrap_or(false)
                 })
-                .ok_or_else(|| SuperbError::Message(format!("input device '{name}' not found")))?,
+                .ok_or_else(|| SuperbError::DeviceNotFound {
+                    name: name.to_string(),
+                })?,
             None => host
                 .default_input_device()
-                .ok_or_else(|| SuperbError::Message("no default input device".into()))?,
+                .ok_or_else(|| SuperbError::DeviceNotFound {
+                    name: "default input".into(),
+                })?,
         };
         let device_name = device
             .description()
@@ -177,14 +181,14 @@ impl InputStream {
                 callbacks_cb,
             )?,
             other => {
-                return Err(SuperbError::Message(format!(
+                return Err(SuperbError::Device(format!(
                     "unsupported device sample format {other:?}"
                 )))
             }
         };
         stream
             .play()
-            .map_err(|e| SuperbError::Message(format!("start stream: {e}")))?;
+            .map_err(|e| SuperbError::Device(format!("start stream: {e}")))?;
         Ok(Self {
             stream,
             sample_rate,
@@ -208,14 +212,14 @@ impl InputStream {
     pub fn play(&self) -> Result<()> {
         self.stream
             .play()
-            .map_err(|e| SuperbError::Message(format!("play: {e}")))
+            .map_err(|e| SuperbError::Device(format!("play: {e}")))
     }
 
     /// Pauses the stream (not supported by every backend).
     pub fn pause(&self) -> Result<()> {
         self.stream
             .pause()
-            .map_err(|e| SuperbError::Message(format!("pause: {e}")))
+            .map_err(|e| SuperbError::Device(format!("pause: {e}")))
     }
 
     /// Sample rate the stream runs at.
@@ -249,7 +253,7 @@ fn pick_supported_input(
 ) -> Result<(cpal::SupportedStreamConfig, usize, SampleRate)> {
     let ranges = device
         .supported_input_configs()
-        .map_err(|e| SuperbError::Message(format!("query configs: {e}")))?
+        .map_err(|e| SuperbError::Device(format!("query configs: {e}")))?
         .collect::<Vec<_>>();
 
     let pick_fmt = |list: &[cpal::SupportedStreamConfig]| {
@@ -287,10 +291,10 @@ fn pick_supported_input(
     // 4) OS default layout (rate + channels the driver prefers).
     let default = device
         .default_input_config()
-        .map_err(|e| SuperbError::Message(format!("default input config: {e}")))?;
+        .map_err(|e| SuperbError::Device(format!("default input config: {e}")))?;
     let channels = default.channels() as usize;
     if channels == 0 {
-        return Err(SuperbError::Message(format!(
+        return Err(SuperbError::Device(format!(
             "device '{device_name}' reported 0 input channels"
         )));
     }
@@ -339,7 +343,7 @@ where
     };
     device
         .build_input_stream(*config, data_cb, err_cb, timeout)
-        .map_err(|e| SuperbError::Message(format!("build input stream: {e}")))
+        .map_err(|e| SuperbError::Device(format!("build input stream: {e}")))
 }
 
 /// Opens a capture stream wired to a recycle SPSC of planar blocks.

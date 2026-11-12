@@ -88,9 +88,12 @@ pub fn output(session: &mut Session, device: Option<&str>) -> Result<()> {
     if session.needs_rebuild {
         crate::session::steps::rebuild(session)?;
     }
-    let audio_thread = session.audio_thread.take().ok_or_else(|| {
-        SuperbError::Message("the audio thread is already running on a device stream".into())
-    })?;
+    let audio_thread = session
+        .audio_thread
+        .take()
+        .ok_or(SuperbError::InvalidState {
+            why: "the audio thread is already running on a device stream",
+        })?;
     match audio_thread.run_on_device(&config) {
         Ok(output) => {
             session.output = Some(output);
@@ -115,14 +118,13 @@ pub fn output(session: &mut Session, device: Option<&str>) -> Result<()> {
 #[cfg(feature = "devices")]
 pub fn close_output(session: &mut Session) -> Result<()> {
     if session.recording.is_some() {
-        return Err(SuperbError::Message(
-            "stop the recording before closing the output".into(),
-        ));
+        return Err(SuperbError::InvalidState {
+            why: "stop the recording before closing the output",
+        });
     }
-    let output = session
-        .output
-        .take()
-        .ok_or_else(|| SuperbError::Message("no device output is open".into()))?;
+    let output = session.output.take().ok_or(SuperbError::InvalidState {
+        why: "no device output is open",
+    })?;
     session.audio_thread = Some(output.stop()?);
     Ok(())
 }
@@ -170,8 +172,8 @@ impl AudioInput {
     /// Starts feeding the recording queue and hands out its consumer end,
     /// emptied of anything left from before.
     pub(crate) fn begin_recording(&mut self) -> Result<CaptureConsumer> {
-        let mut blocks = self.record.take().ok_or_else(|| {
-            SuperbError::Message("a recording is already drawing from the audio input".into())
+        let mut blocks = self.record.take().ok_or(SuperbError::InvalidState {
+            why: "a recording is already drawing from the audio input",
         })?;
         while let Some(stale) = blocks.pop() {
             blocks.recycle(stale);
@@ -218,9 +220,9 @@ impl core::fmt::Debug for AudioInput {
 #[cfg(feature = "devices")]
 pub fn input(session: &mut Session, device: Option<&str>) -> Result<()> {
     if session.input.is_some() {
-        return Err(SuperbError::Message(
-            "the audio input is already open".into(),
-        ));
+        return Err(SuperbError::InvalidState {
+            why: "the audio input is already open",
+        });
     }
     let channels = inputs()?
         .iter()
@@ -277,14 +279,13 @@ pub fn input(session: &mut Session, device: Option<&str>) -> Result<()> {
 /// rebuild or render.
 #[cfg(feature = "devices")]
 pub fn close_input(session: &mut Session) -> Result<()> {
-    let input = session
-        .input
-        .as_ref()
-        .ok_or_else(|| SuperbError::Message("the audio input is not open".into()))?;
+    let input = session.input.as_ref().ok_or(SuperbError::InvalidState {
+        why: "the audio input is not open",
+    })?;
     if input.record.is_none() {
-        return Err(SuperbError::Message(
-            "stop the recording before closing the audio input".into(),
-        ));
+        return Err(SuperbError::InvalidState {
+            why: "stop the recording before closing the audio input",
+        });
     }
     session.engine.send(EngineCommand::LiveInput(None))?;
     session.input = None;

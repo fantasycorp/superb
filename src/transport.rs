@@ -75,7 +75,7 @@ pub fn rewind(session: &mut Session) -> Result<()> {
 }
 
 /// Turns looping over the session's loop range on or off (set the range
-/// with [`session::set_loop`](crate::session::set_loop)). State, like
+/// with [`session::loop_range`](crate::session::loop_range)). State, like
 /// mute: saved with the session, applied at the engine's next block, not
 /// an undo step.
 ///
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(playhead(&session), TimePosition::ZERO);
 
         let range = LoopRange::new(TimePosition::ZERO, TimePosition::from_samples(100)).unwrap();
-        session::set_loop(&mut session, Some(range)).unwrap();
+        session::loop_range(&mut session, Some(range)).unwrap();
         looping(&mut session, true).unwrap();
         start(&mut session).unwrap();
         session::steps::render_blocks(&mut session, 3).unwrap(); // 192 frames through a 100-frame loop
@@ -176,7 +176,7 @@ mod tests {
         let (mut session, _) = tone_rig();
         let dir = session.folder.clone();
         let range = LoopRange::new(TimePosition::ZERO, TimePosition::from_samples(100)).unwrap();
-        session::set_loop(&mut session, Some(range)).unwrap();
+        session::loop_range(&mut session, Some(range)).unwrap();
         session::state_file(&mut session, Some(dir.join("state.json"))).unwrap();
         let steps = session.history.undo_len();
         looping(&mut session, true).unwrap();

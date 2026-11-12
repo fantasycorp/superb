@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::insert::Insert;
+use crate::primitives::mixer::SendTap;
 use crate::primitives::{
     ClipId, InsertId, Result, SendId, SuperbError, TimeDuration, TimePosition, TrackId,
 };
@@ -91,6 +92,7 @@ impl From<Vec<MidiNote>> for ClipSource {
 /// A clip on a track: a placed region of some [`ClipSource`].
 ///
 /// ```
+/// use superb::primitives::mixer::SendTap;
 /// use superb::primitives::session::{Clip, ClipSource, Track, TrackKind, TrackSend};
 /// use superb::primitives::{ClipId, SendId, TimeDuration, TimePosition, TrackId};
 ///
@@ -132,12 +134,12 @@ impl From<Vec<MidiNote>> for ClipSource {
 /// let bus = TrackId::from_raw(7);
 /// let send = TrackSend::with_id(SendId::from_raw(3), bus)
 ///     .level_db(-6.0)
-///     .pre_fader();
+///     .tap(SendTap::PreFader);
 /// assert_eq!(send.id(), SendId::from_raw(3));
 /// assert_eq!(send.bus(), bus);
 /// assert_eq!(
-///     (send.state.level_db, send.pre_fader, send.state.enabled),
-///     (-6.0, true, true)
+///     (send.state.level_db, send.tap, send.state.enabled),
+///     (-6.0, SendTap::PreFader, true)
 /// );
 /// # Ok::<(), superb::primitives::SuperbError>(())
 /// ```
@@ -364,8 +366,9 @@ impl Default for SendState {
 pub struct TrackSend {
     pub(crate) id: SendId,
     pub(crate) bus: TrackId,
-    /// Tap before the fader/pan/mute (`true`) or after the strip (`false`).
-    pub pre_fader: bool,
+    /// Where the send taps the track: before the fader, pan and mute, or
+    /// after the strip.
+    pub tap: SendTap,
     /// Level and on/off.
     pub state: SendState,
 }
@@ -382,7 +385,7 @@ impl TrackSend {
         Self {
             id,
             bus,
-            pre_fader: false,
+            tap: SendTap::PostFader,
             state: SendState::default(),
         }
     }
@@ -393,9 +396,9 @@ impl TrackSend {
         self
     }
 
-    /// Taps before the fader (builder style).
-    pub fn pre_fader(mut self) -> Self {
-        self.pre_fader = true;
+    /// Sets where the send taps the track (builder style).
+    pub fn tap(mut self, tap: SendTap) -> Self {
+        self.tap = tap;
         self
     }
 
@@ -582,16 +585,16 @@ mod tests {
         assert_eq!(s.id(), SendId::INVALID);
         assert_eq!(s.bus(), bus);
         assert_eq!(
-            (s.state.level_db, s.pre_fader, s.state.enabled),
-            (0.0, false, true)
+            (s.state.level_db, s.tap, s.state.enabled),
+            (0.0, SendTap::PostFader, true)
         );
         let s = TrackSend::with_id(SendId::from_raw(3), bus)
             .level_db(-6.0)
-            .pre_fader();
+            .tap(SendTap::PreFader);
         assert_eq!(s.id(), SendId::from_raw(3));
         assert_eq!(
-            (s.state.level_db, s.pre_fader, s.state.enabled),
-            (-6.0, true, true)
+            (s.state.level_db, s.tap, s.state.enabled),
+            (-6.0, SendTap::PreFader, true)
         );
     }
 

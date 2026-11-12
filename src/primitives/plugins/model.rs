@@ -132,20 +132,78 @@ pub struct AudioPortLayout {
 }
 
 /// A parameter move queued for the audio thread.
+///
+/// ```
+/// use superb::primitives::plugins::ParamChange;
+///
+/// let now = ParamChange::new(7, 0.5);
+/// assert_eq!((now.id, now.value, now.frame), (7, 0.5, 0));
+/// assert_eq!(now.at(32).frame, 32);
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ParamChange {
     /// [`ParamInfo::id`].
     pub id: u32,
     /// New plain value in `[min, max]`.
     pub value: f64,
+    /// Where in the block the change lands: frames after the start of the
+    /// block that picks it up. `0` is the start of the block; a frame past
+    /// the end of the block lands on its last frame. A format that cannot
+    /// place a change inside a block applies it at the start.
+    pub frame: u32,
+}
+
+impl ParamChange {
+    /// A change that lands at the start of the next block.
+    pub fn new(id: u32, value: f64) -> Self {
+        Self {
+            id,
+            value,
+            frame: 0,
+        }
+    }
+
+    /// The same change, landing `frame` frames into the block (builder
+    /// style).
+    pub fn at(mut self, frame: u32) -> Self {
+        self.frame = frame;
+        self
+    }
+}
+
+/// Something a plugin did to one of its own parameters: the user turned a
+/// control in the plugin's own view, or the plugin moved it itself. The
+/// host hears of it after the block it happened in
+/// ([`PluginInstance::drain_changes`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PluginChange {
+    /// The parameter now has this plain value.
+    Value {
+        /// [`ParamInfo::id`].
+        id: u32,
+        /// The value the plugin gave it.
+        value: f64,
+    },
+    /// The user took hold of the parameter's control. Values follow until
+    /// [`Released`](Self::Released).
+    Touched {
+        /// [`ParamInfo::id`].
+        id: u32,
+    },
+    /// The user let go of the parameter's control.
+    Released {
+        /// [`ParamInfo::id`].
+        id: u32,
+    },
 }
 
 /// A hosted plugin, whatever its format.
 ///
 /// Threading contract (mirrors CLAP's): `activate`, `deactivate`,
 /// `param_value`, `save_state`, `load_state` and `params` are main-thread
-/// calls; `process`, `reset` and `set_param` (which only queues) are
-/// audio-thread safe once active and must not allocate.
+/// calls; `process`, `reset`, `drain_changes`, `set_param` and
+/// `set_param_at` (which only queue) are audio-thread safe once active and
+/// must not allocate.
 pub trait PluginInstance: Send {
     /// Static description.
     fn descriptor(&self) -> &PluginDescriptor;
@@ -162,6 +220,22 @@ pub trait PluginInstance: Send {
     /// Queues a parameter change for the next `process` call (or applies it
     /// immediately while inactive). Fails for unknown IDs or a full queue.
     fn set_param(&mut self, id: u32, value: f64) -> Result<()>;
+
+    /// As [`set_param`](Self::set_param), landing `frame` frames into the
+    /// next block ([`ParamChange::frame`]). The default applies the change
+    /// at the start of the block: a format that can place a change inside
+    /// a block overrides it.
+    fn set_param_at(&mut self, id: u32, value: f64, frame: u32) -> Result<()> {
+        let _ = frame;
+        self.set_param(id, value)
+    }
+
+    /// Hands `sink` every change the plugin made to its own parameters
+    /// since the last call, in order ([`PluginChange`]). Audio-thread
+    /// safe and must not allocate. The default has nothing to hand over.
+    fn drain_changes(&mut self, sink: &mut dyn FnMut(PluginChange)) {
+        let _ = sink;
+    }
 
     /// Prepares for processing at `sample_rate` with blocks of at most
     /// `max_frames`. May allocate.
@@ -192,6 +266,34 @@ pub trait PluginInstance: Send {
 
     /// Restores state produced by [`save_state`](Self::save_state).
     fn load_state(&mut self, bytes: &[u8]) -> Result<()>;
+
+    /// The main-thread side of this instance, for a caller that has handed
+    /// the instance itself to the audio thread and still has to read its
+    /// parameters or save its state. `None` when the format gives no way
+    /// to do that beside `process`; the default.
+    fn control(&self) -> Option<Box<dyn PluginControl>> {
+        None
+    }
+}
+
+/// The main-thread side of a plugin whose instance runs on the audio
+/// thread: what a host may ask of a plugin while it processes.
+///
+/// A [`PluginInstance`] is owned by whoever processes it, so once it sits
+/// in a running graph the control thread cannot reach it. This handle,
+/// taken with [`PluginInstance::control`] before the instance is handed
+/// over, is how the control thread still reads a parameter and saves or
+/// restores the state. Every call fails cleanly once the instance has been
+/// dropped.
+pub trait PluginControl: Send {
+    /// Current plain value of a parameter.
+    fn param_value(&self, id: u32) -> Result<f64>;
+
+    /// Serialises the plugin's full state.
+    fn save_state(&self) -> Result<Vec<u8>>;
+
+    /// Restores state produced by `save_state`.
+    fn load_state(&self, bytes: &[u8]) -> Result<()>;
 }
 
 #[cfg(test)]

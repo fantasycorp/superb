@@ -5,10 +5,12 @@ use crate::primitives::graph::{Node, NodeChannels, ProcessContext, ProcessStatus
 use crate::primitives::realtime::spsc::{self, Consumer, Producer};
 use crate::primitives::SampleRate;
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::primitives::plugins::{ParamChange, PluginInstance};
+use core::any::Any;
+
+use crate::primitives::plugins::{AudioPortLayout, ParamChange, PluginChange, PluginInstance};
 
 /// Wraps a [`PluginInstance`] so it can be placed in an
 /// [`AudioGraph`](crate::primitives::graph::AudioGraph).
@@ -17,7 +19,16 @@ use crate::primitives::plugins::{ParamChange, PluginInstance};
 /// than panicking), `process` first drains the parameter queue into the
 /// instance and then renders. Take the queue's sending half with
 /// [`take_param_sender`](PluginNode::take_param_sender) before handing the
-/// node to the graph.
+/// node to the graph. What the plugin changes itself (a control turned in
+/// its own view) comes back the other way: take
+/// [`take_change_receiver`](PluginNode::take_change_receiver) too.
+///
+/// A plugin outlives the graph it sits in. Give the node a key with
+/// [`carried_as`](PluginNode::carried_as); when a new graph replaces this
+/// one, a node made with [`adopting`](PluginNode::adopting) under the same
+/// key takes the running instance over at the swap, between two blocks,
+/// with its state and its tails ([`Node::carry`]). Until an instance
+/// arrives, an adopting node passes its input through.
 ///
 /// ```
 /// use superb::primitives::buffers::PlanarBuffer;
@@ -135,42 +146,101 @@ use crate::primitives::plugins::{ParamChange, PluginInstance};
 /// let mut input = PlanarBuffer::new(1, 8);
 /// input.fill(1.0);
 /// let mut output = PlanarBuffer::new(1, 8);
-/// params.push(ParamChange { id: 1, value: 0.5 }).unwrap();
+/// params.push(ParamChange::new(1, 0.5)).unwrap();
 /// assert_eq!(node.process(&ctx, &input, &mut output), ProcessStatus::Normal);
 /// assert_eq!(output.channel(0), &[0.5; 8]);
 /// ```
 pub struct PluginNode {
-    instance: Box<dyn PluginInstance>,
+    /// The instance, as a `Box<Held>`. Kept behind `Any` so the graph can
+    /// move it to another node at a swap without knowing what it is.
+    held: Option<Box<dyn Any + Send>>,
+    key: Option<u64>,
     name: String,
     channels: NodeChannels,
+    /// The latency to report while no instance is held.
+    latency: usize,
+    /// The instance's latency after the last `prepare`, for the control side.
+    measured: Arc<AtomicUsize>,
     params_rx: Consumer<ParamChange>,
     params_tx: Option<Producer<ParamChange>>,
     bypass: Arc<AtomicBool>,
-    prepared: bool,
+    /// The receiving half of the held instance's change queue, until taken.
+    changes_rx: Option<Consumer<PluginChange>>,
+}
+
+/// What a [`PluginNode`] holds and hands over at a graph swap: the
+/// instance, and the queue its own changes go out on. The queue travels
+/// with the instance so its receiver stays the same for the instance's
+/// whole life, whichever graph it runs in.
+struct Held {
+    instance: Box<dyn PluginInstance>,
+    changes: Producer<PluginChange>,
 }
 
 impl PluginNode {
     /// Capacity of the parameter queue (changes per block before drops).
     pub const PARAM_QUEUE_CAPACITY: usize = 256;
 
+    /// Capacity of the queue of the plugin's own changes (changes the
+    /// receiver may leave unread before new ones are dropped).
+    pub const CHANGE_QUEUE_CAPACITY: usize = 1024;
+
     /// Wraps an instance. The node's channel layout is the plugin's main
     /// input/output port layout.
     pub fn new(instance: Box<dyn PluginInstance>) -> Self {
         let ports = instance.ports();
         let name = instance.descriptor().name.clone();
+        let latency = instance.latency_frames();
+        let mut node = Self::adopting(0, name, ports, latency);
+        let (changes, changes_rx) = spsc::channel(Self::CHANGE_QUEUE_CAPACITY);
+        node.key = None;
+        node.held = Some(Box::new(Held { instance, changes }));
+        node.changes_rx = Some(changes_rx);
+        node
+    }
+
+    /// A node with no instance yet, which takes over the instance of the
+    /// node carried under `key` in the graph it replaces. `name`, `ports`
+    /// and `latency` are what that instance reports; the graph is laid out
+    /// with them before the instance arrives.
+    pub fn adopting(
+        key: u64,
+        name: impl Into<String>,
+        ports: AudioPortLayout,
+        latency: usize,
+    ) -> Self {
         let (tx, rx) = spsc::channel(Self::PARAM_QUEUE_CAPACITY);
         Self {
-            instance,
-            name,
+            held: None,
+            key: Some(key),
+            name: name.into(),
             channels: NodeChannels {
                 inputs: ports.inputs,
                 outputs: ports.outputs,
             },
+            latency,
+            measured: Arc::new(AtomicUsize::new(latency)),
             params_rx: rx,
             params_tx: Some(tx),
             bypass: Arc::new(AtomicBool::new(false)),
-            prepared: false,
+            changes_rx: None,
         }
+    }
+
+    /// Names the instance so the node that replaces this one in the next
+    /// graph can take it over (builder style). Keys are the caller's: one
+    /// per plugin instance, the same across rebuilds.
+    pub fn carried_as(mut self, key: u64) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    fn held(&self) -> Option<&Held> {
+        self.held.as_ref()?.downcast_ref::<Held>()
+    }
+
+    fn held_mut(&mut self) -> Option<&mut Held> {
+        self.held.as_mut()?.downcast_mut::<Held>()
     }
 
     /// The bypass switch, shared with the control thread. While set, the
@@ -182,36 +252,58 @@ impl PluginNode {
         Arc::clone(&self.bypass)
     }
 
+    /// The latency the instance reported after the last `prepare`, shared
+    /// with the control thread: what to give [`adopting`](Self::adopting)
+    /// when the next graph is built, so that graph is laid out with the
+    /// latency the instance really has.
+    pub fn latency_handle(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.measured)
+    }
+
     /// `true` while the bypass switch is set.
     pub fn is_bypassed(&self) -> bool {
         self.bypass.load(Ordering::Relaxed)
     }
 
     /// The sending half of the parameter queue (once). Pushing a
-    /// [`ParamChange`] is wait-free; the node applies it at the start of the
-    /// next block.
+    /// [`ParamChange`] is wait-free; the node hands it to the plugin before
+    /// the next block, to land at its [`frame`](ParamChange::frame).
     pub fn take_param_sender(&mut self) -> Option<Producer<ParamChange>> {
         self.params_tx.take()
     }
 
-    /// The wrapped instance.
-    pub fn instance(&self) -> &dyn PluginInstance {
-        self.instance.as_ref()
+    /// The receiving half of the queue of the plugin's own changes (once):
+    /// each [`PluginChange`] the instance reports, in order, after the
+    /// block it happened in. The queue belongs to the instance, not to
+    /// this node: it keeps delivering after the instance has been taken
+    /// over by a node of the next graph. `None` for a node made with
+    /// [`adopting`](Self::adopting), which gets its instance, queue
+    /// included, from the node it replaces.
+    pub fn take_change_receiver(&mut self) -> Option<Consumer<PluginChange>> {
+        self.changes_rx.take()
+    }
+
+    /// The wrapped instance; `None` for an adopting node nothing has
+    /// reached yet, and for a node whose instance has moved on.
+    pub fn instance(&self) -> Option<&dyn PluginInstance> {
+        self.held().map(|h| h.instance.as_ref())
     }
 
     /// Mutable access to the wrapped instance (main thread, e.g. state I/O).
-    pub fn instance_mut(&mut self) -> &mut dyn PluginInstance {
-        self.instance.as_mut()
+    pub fn instance_mut(&mut self) -> Option<&mut (dyn PluginInstance + 'static)> {
+        self.held_mut().map(|h| h.instance.as_mut())
     }
 
-    /// Unwraps the instance.
-    pub fn into_instance(self) -> Box<dyn PluginInstance> {
-        self.instance
+    /// Unwraps the instance, if the node holds one.
+    pub fn into_instance(self) -> Option<Box<dyn PluginInstance>> {
+        let held = *self.held?.downcast::<Held>().ok()?;
+        Some(held.instance)
     }
 
-    /// `true` if the last `prepare` activated the plugin successfully.
+    /// `true` while the node holds an instance that is active: the last
+    /// `prepare` activated it, here or in the node it was taken over from.
     pub fn is_prepared(&self) -> bool {
-        self.prepared
+        self.held().is_some_and(|h| h.instance.is_active())
     }
 }
 
@@ -225,14 +317,28 @@ impl Node for PluginNode {
     }
 
     fn prepare(&mut self, sample_rate: SampleRate, max_frames: usize) {
-        if self.instance.is_active() {
-            self.instance.deactivate();
+        // An adopting node has nothing to activate: the instance it takes
+        // over was activated in the graph it comes from, at the same rate
+        // and block size (the live graph refuses any other).
+        if let Some(held) = self.held_mut() {
+            if held.instance.is_active() {
+                held.instance.deactivate();
+            }
+            // A failure leaves the instance inactive and the node silent.
+            let _ = held.instance.activate(sample_rate, max_frames);
+            let latency = held.instance.latency_frames();
+            self.measured.store(latency, Ordering::Relaxed);
         }
-        self.prepared = self.instance.activate(sample_rate, max_frames).is_ok();
     }
 
     fn reset(&mut self) {
-        self.instance.reset();
+        if let Some(held) = self.held_mut() {
+            held.instance.reset();
+        }
+    }
+
+    fn carry(&mut self) -> Option<(u64, &mut Option<Box<dyn Any + Send>>)> {
+        self.key.map(|key| (key, &mut self.held))
     }
 
     fn process(
@@ -241,28 +347,46 @@ impl Node for PluginNode {
         input: &PlanarBuffer,
         output: &mut PlanarBuffer,
     ) -> ProcessStatus {
-        if !self.prepared {
+        let bypass = self.bypass.load(Ordering::Relaxed);
+        let through = |output: &mut PlanarBuffer| {
+            if ctx.input_is_silent || input.channels() != output.channels() {
+                return ProcessStatus::Silent;
+            }
+            match output.copy_block_from(0, input, ctx.frames) {
+                Ok(()) => ProcessStatus::Normal,
+                Err(_) => ProcessStatus::Silent,
+            }
+        };
+        // Split the borrow: the queue and the instance are separate fields.
+        let Some(held) = self.held.as_mut().and_then(|h| h.downcast_mut::<Held>()) else {
+            // Nothing has reached an adopting node yet: the signal passes.
+            return through(output);
+        };
+        if !held.instance.is_active() {
             return ProcessStatus::Silent;
         }
         while let Some(change) = self.params_rx.pop() {
             // Unknown IDs / full plugin queues are dropped: nothing can be
             // reported from the audio thread.
-            let _ = self.instance.set_param(change.id, change.value);
+            let _ = held
+                .instance
+                .set_param_at(change.id, change.value, change.frame);
         }
-        if self.bypass.load(Ordering::Relaxed) {
-            if ctx.input_is_silent {
-                return ProcessStatus::Silent;
-            }
-            return match output.copy_block_from(0, input, ctx.frames) {
-                Ok(()) => ProcessStatus::Normal,
-                Err(_) => ProcessStatus::Silent,
-            };
+        if bypass {
+            return through(output);
         }
-        self.instance.process(ctx, input, output)
+        let status = held.instance.process(ctx, input, output);
+        let Held { instance, changes } = held;
+        // A full queue drops the change: nobody is reading.
+        instance.drain_changes(&mut |change| {
+            let _ = changes.push(change);
+        });
+        status
     }
 
     fn latency_frames(&self) -> usize {
-        self.instance.latency_frames()
+        self.held()
+            .map_or(self.latency, |h| h.instance.latency_frames())
     }
 }
 
@@ -417,9 +541,9 @@ pub(crate) mod tests {
             node.take_param_sender().is_none(),
             "sender is handed out once"
         );
-        assert_eq!(node.instance().descriptor().id, "superb.mock.gain");
-        node.instance_mut().set_param(1, 0.25).unwrap();
-        assert_eq!(node.into_instance().param_value(1).unwrap(), 0.25);
+        assert_eq!(node.instance().unwrap().descriptor().id, "superb.mock.gain");
+        node.instance_mut().unwrap().set_param(1, 0.25).unwrap();
+        assert_eq!(node.into_instance().unwrap().param_value(1).unwrap(), 0.25);
     }
 
     #[test]
@@ -442,8 +566,8 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(g.node_output(fx).unwrap().channel(1), &[1.0; 8]);
 
-        tx.push(ParamChange { id: 1, value: 0.5 }).unwrap();
-        tx.push(ParamChange { id: 99, value: 7.0 }).unwrap(); // unknown: dropped silently
+        tx.push(ParamChange::new(1, 0.5)).unwrap();
+        tx.push(ParamChange::new(99, 7.0)).unwrap(); // unknown: dropped silently
         g.process(BlockTime::free_running(), 8, &no_midi(), None)
             .unwrap();
         assert_eq!(g.node_output(fx).unwrap().channel(0), &[0.5; 8]);
@@ -470,7 +594,7 @@ pub(crate) mod tests {
             input_is_silent: false,
             input: None,
         };
-        tx.push(ParamChange { id: 1, value: 0.5 }).unwrap();
+        tx.push(ParamChange::new(1, 0.5)).unwrap();
         bypass.store(true, Ordering::Relaxed);
         assert!(node.is_bypassed());
         assert_eq!(
@@ -530,7 +654,7 @@ pub(crate) mod tests {
         let mut node = PluginNode::new(Box::new(MockGain::new(0)));
         node.prepare(SampleRate::HZ_48K, 16);
         node.prepare(SampleRate::CD, 32);
-        assert!(node.is_prepared() && node.instance().is_active());
+        assert!(node.is_prepared() && node.instance().unwrap().is_active());
         node.reset();
         assert_eq!(
             node.process(&ctx, &input, &mut output),

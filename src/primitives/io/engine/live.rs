@@ -623,8 +623,9 @@ impl LiveOutput {
             .thread
             .lock()
             .map_err(|_| SuperbError::Message("the audio thread panicked on the device".into()))?;
-        slot.take()
-            .ok_or_else(|| SuperbError::Message("the audio thread is gone".into()))
+        slot.take().ok_or(SuperbError::InvalidState {
+            why: "the audio thread is gone",
+        })
     }
 }
 

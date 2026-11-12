@@ -5,6 +5,8 @@
 //! * [`PluginInstance`] — the format-agnostic contract a hosted plugin
 //!   fulfils: descriptor, audio port layout, parameters, activate/process,
 //!   latency, state. [`PluginDescriptor`] / [`ParamInfo`] describe it.
+//! * [`PluginControl`] — the main-thread side of an instance that runs on
+//!   the audio thread: read a parameter, save and restore the state.
 //! * [`PluginNode`] — adapts any `Box<dyn PluginInstance>` to
 //!   [`Node`](crate::primitives::graph::Node), with a wait-free parameter queue so a UI
 //!   thread can move plugin parameters while the graph runs.
@@ -57,7 +59,7 @@
 //! graph.set_output(fx).unwrap();
 //! graph.prepare(SampleRate::HZ_48K, 256).unwrap();
 //!
-//! params.push(ParamChange { id: 0, value: 0.5 }).unwrap(); // from the UI thread
+//! params.push(ParamChange::new(0, 0.5)).unwrap(); // from the UI thread
 //! graph.process(BlockTime::free_running(), 256, &MidiEventBuffer::with_capacity(0), None).unwrap();
 //! assert!(graph.output().peak() <= 0.5 + 1e-6);
 //! ```
@@ -74,6 +76,7 @@ pub mod scan;
 pub mod vst3;
 
 pub use model::{
-    AudioPortLayout, ParamChange, ParamInfo, PluginDescriptor, PluginFormat, PluginInstance,
+    AudioPortLayout, ParamChange, ParamInfo, PluginChange, PluginControl, PluginDescriptor,
+    PluginFormat, PluginInstance,
 };
 pub use node::PluginNode;

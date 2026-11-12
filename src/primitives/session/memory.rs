@@ -666,12 +666,11 @@ impl Memory {
     // ------------------------------------------------------------------
 
     /// Appends an insert to a track's chain. Any track kind may carry
-    /// inserts. An insert without an ID gets a fresh one; an insert with an
-    /// ID must not collide.
+    /// inserts, the master included. An insert without an ID gets a fresh
+    /// one; an insert with an ID must not collide.
     pub fn add_insert(&mut self, track: TrackId, insert: Insert) -> Result<InsertId> {
-        let ti = self.track_index(track)?;
-        let end = self.tracks[ti].inserts.len();
-        self.place_insert(ti, end, insert)
+        let end = self.track(track)?.inserts.len();
+        self.add_insert_at(track, end, insert)
     }
 
     /// Puts an insert into a track's chain at `index` (`0` is the first
@@ -680,18 +679,13 @@ impl Memory {
         &mut self,
         track: TrackId,
         index: usize,
-        insert: Insert,
+        mut insert: Insert,
     ) -> Result<InsertId> {
-        let ti = self.track_index(track)?;
-        if index > self.tracks[ti].inserts.len() {
+        if index > self.track(track)?.inserts.len() {
             return Err(SuperbError::InvalidArgument {
                 what: "insert index",
             });
         }
-        self.place_insert(ti, index, insert)
-    }
-
-    fn place_insert(&mut self, ti: usize, index: usize, mut insert: Insert) -> Result<InsertId> {
         if insert.id.is_valid() {
             if self.find_insert(insert.id).is_some() {
                 return Err(SuperbError::InvalidArgument {
@@ -703,82 +697,86 @@ impl Memory {
             insert.id = self.allocate_insert_id();
         }
         let id = insert.id;
-        self.tracks[ti].inserts.insert(index, insert);
-        self.touch();
+        self.track_mut(track)?.inserts.insert(index, insert);
         Ok(id)
     }
 
     /// Removes an insert, returning its track, its position in the chain
     /// and the insert itself.
     pub fn remove_insert(&mut self, id: InsertId) -> Result<(TrackId, usize, Insert)> {
-        let (ti, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
+        let (track, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
             kind: "insert",
             id: id.raw(),
         })?;
-        let track = self.tracks[ti].id;
-        let insert = self.tracks[ti].inserts.remove(ii);
-        self.touch();
+        let insert = self.track_mut(track)?.inserts.remove(ii);
         Ok((track, ii, insert))
     }
 
     /// Moves an insert to `index` within its track's chain.
     pub fn move_insert(&mut self, id: InsertId, index: usize) -> Result<()> {
-        let (ti, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
+        let (track, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
             kind: "insert",
             id: id.raw(),
         })?;
-        let chain = &mut self.tracks[ti].inserts;
-        if index >= chain.len() {
+        if index >= self.track(track)?.inserts.len() {
             return Err(SuperbError::InvalidArgument {
                 what: "insert index",
             });
         }
         if ii != index {
+            let chain = &mut self.track_mut(track)?.inserts;
             let insert = chain.remove(ii);
             chain.insert(index, insert);
-            self.touch();
         }
         Ok(())
     }
 
-    /// Looks up an insert on any track.
+    /// Looks up an insert on any track, the master included.
     pub fn insert(&self, id: InsertId) -> Result<&Insert> {
-        let (ti, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
+        let (track, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
             kind: "insert",
             id: id.raw(),
         })?;
-        Ok(&self.tracks[ti].inserts[ii])
+        Ok(&self.track(track)?.inserts[ii])
     }
 
     /// Mutable insert access (bumps the revision).
     pub fn insert_mut(&mut self, id: InsertId) -> Result<&mut Insert> {
-        let (ti, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
+        let (track, ii) = self.find_insert(id).ok_or(SuperbError::NotFound {
             kind: "insert",
             id: id.raw(),
         })?;
-        self.touch();
-        Ok(&mut self.tracks[ti].inserts[ii])
+        Ok(&mut self.track_mut(track)?.inserts[ii])
     }
 
     /// The track whose chain holds `id`.
     pub fn insert_owner(&self, id: InsertId) -> Result<TrackId> {
-        let (ti, _) = self.find_insert(id).ok_or(SuperbError::NotFound {
-            kind: "insert",
-            id: id.raw(),
-        })?;
-        Ok(self.tracks[ti].id)
+        self.find_insert(id)
+            .map(|(track, _)| track)
+            .ok_or(SuperbError::NotFound {
+                kind: "insert",
+                id: id.raw(),
+            })
     }
 
-    /// Total number of inserts across all tracks.
+    /// Total number of inserts across all tracks and the master.
     pub fn insert_count(&self) -> usize {
-        self.tracks.iter().map(|t| t.inserts.len()).sum()
+        core::iter::once(&self.master)
+            .chain(&self.tracks)
+            .map(|t| t.inserts.len())
+            .sum()
     }
 
-    fn find_insert(&self, id: InsertId) -> Option<(usize, usize)> {
-        self.tracks
-            .iter()
-            .enumerate()
-            .find_map(|(ti, t)| t.inserts.iter().position(|i| i.id == id).map(|ii| (ti, ii)))
+    /// The track (the master included) and the place in its chain of `id`.
+    fn find_insert(&self, id: InsertId) -> Option<(TrackId, usize)> {
+        core::iter::once(&self.master)
+            .chain(&self.tracks)
+            .find_map(|t| {
+                t.inserts
+                    .iter()
+                    .position(|i| i.id == id)
+                    .map(|ii| (t.id, ii))
+            })
     }
 
     // ------------------------------------------------------------------
@@ -1000,6 +998,7 @@ impl Memory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::mixer::SendTap;
     use crate::primitives::session::ClipSource;
     use crate::primitives::BeatPosition;
 
@@ -1238,7 +1237,9 @@ mod tests {
                 .unwrap(),
             id
         );
-        let auto = s.add_send(k, TrackSend::new(fx).pre_fader()).unwrap();
+        let auto = s
+            .add_send(k, TrackSend::new(fx).tap(SendTap::PreFader))
+            .unwrap();
         assert!(auto.is_valid() && auto != id);
         assert!(
             s.add_send(a, TrackSend::with_id(id, fx)).is_err(),
@@ -1261,7 +1262,7 @@ mod tests {
         assert_eq!(s.send_count(), 2);
         assert_eq!(s.send(id).unwrap().state.level_db, -6.0);
         assert_eq!(s.send_track(auto).unwrap(), k);
-        assert!(s.send(auto).unwrap().pre_fader);
+        assert_eq!(s.send(auto).unwrap().tap, SendTap::PreFader);
         s.send_mut(auto).unwrap().state.enabled = false;
         assert!(!s.send(auto).unwrap().state.enabled);
         assert_eq!(
@@ -1334,7 +1335,7 @@ mod tests {
     #[test]
     fn inserts_form_an_ordered_chain_per_track() {
         use crate::primitives::plugins::PluginFormat;
-        use crate::primitives::session::PluginRef;
+        use crate::primitives::session::{Effect, PluginRef};
         let plugin = |id: &str| PluginRef {
             format: PluginFormat::Clap,
             path: "/plugins/fx.clap".into(),
@@ -1361,7 +1362,7 @@ mod tests {
         assert_eq!(chain, [pre, eq, comp]);
         assert_eq!(s.insert_count(), 3);
         assert_eq!(s.insert_owner(comp).unwrap(), a);
-        assert_eq!(s.insert(eq).unwrap().plugin.id, "eq");
+        assert_eq!(s.insert(eq).unwrap().effect, Effect::Plugin(plugin("eq")));
         assert!(s.track(a).unwrap().insert(eq).is_some());
         // Buses take inserts too (a reverb bus).
         let verb = s.add_insert(bus, Insert::new(plugin("verb"))).unwrap();

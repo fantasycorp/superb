@@ -122,7 +122,7 @@ impl AudioFile {
 /// and float) and FLAC. The first audio track is decoded in full; a stream
 /// truncated mid-file yields the frames decoded so far rather than an error,
 /// and packets that fail to decode are skipped, while data that is not a
-/// recognised audio container fails with [`SuperbError::Message`](crate::primitives::SuperbError::Message).
+/// recognised audio container fails with [`SuperbError::Format`](crate::primitives::SuperbError::Format).
 pub fn decode(path: impl AsRef<Path>) -> Result<AudioFile> {
     decode::decode_path(path.as_ref())
 }

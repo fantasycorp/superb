@@ -56,7 +56,7 @@ mod snapshot;
 mod state;
 mod track;
 
-pub use insert::{Insert, InsertState, PluginRef};
+pub use insert::{Effect, EffectParam, Insert, InsertState, PluginRef};
 pub use marker::Marker;
 pub use memory::{Memory, MetronomeState};
 pub use snapshot::{
@@ -64,7 +64,8 @@ pub use snapshot::{
     SendSnapshot, TempoPointSnapshot, TempoSnapshot, TrackSnapshot, FORMAT_VERSION,
 };
 pub use state::{
-    ClipStateSnapshot, SendStateSnapshot, StateSnapshot, TrackStateSnapshot, STATE_FORMAT_VERSION,
+    ClipStateSnapshot, InsertStateSnapshot, SendStateSnapshot, StateSnapshot, TrackStateSnapshot,
+    STATE_FORMAT_VERSION,
 };
 pub use track::{
     Clip, ClipSource, ClipState, Input, MidiNote, SendState, Track, TrackKind, TrackSend,

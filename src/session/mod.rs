@@ -60,6 +60,7 @@
 //! ```
 
 pub(crate) mod folder;
+pub mod plugins;
 pub mod steps;
 
 pub use folder::{Layout, Root};
@@ -75,12 +76,18 @@ use crate::primitives::{BeatPosition, Result, SampleRate, SuperbError, TimeSigna
 
 use std::sync::Arc;
 
+use crate::primitives::graph::dynamics::{
+    Compressor, CompressorParams, DeEsser, DeEsserParams, Gate, GateParams, Leveler, LevelerParams,
+    Limiter, LimiterParams,
+};
 use crate::primitives::graph::nodes::ClickParams;
+use crate::primitives::graph::Node;
 use crate::primitives::io::cache::AudioCache;
 use crate::primitives::io::{AudioThread, Engine, EngineHandle};
 use crate::primitives::mixer::{SendParams, StripParams};
+use crate::primitives::session::{Effect, EffectParam};
 use crate::primitives::undo::UndoStack;
-use crate::primitives::SendId;
+use crate::primitives::{InsertId, SendId};
 
 /// A session: the memory you edit plus everything needed to play it.
 ///
@@ -113,7 +120,7 @@ pub struct Session {
     /// The live controls of the mixer built by the last [`steps::rebuild`]:
     /// one per strip and send, keyed by the memory's ids.
     pub mixer: MixerHandles,
-    /// A take being recorded, if any.
+    /// The recording in progress, if any.
     pub recording: Option<crate::record::Recording>,
     /// Channels per strip and at the output: 2, stereo. Change it before
     /// the first rebuild if you need another width.
@@ -139,6 +146,13 @@ pub struct Session {
     pub state_file: Option<PathBuf>,
     /// Whether the log has been told that state is not being saved.
     pub(crate) state_warned: bool,
+    /// The plugin inserts that have been asked for: each loaded, or the
+    /// reason it is missing. A plugin is loaded when its insert is added,
+    /// or at the first rebuild after the session is opened.
+    pub plugins: Vec<(InsertId, plugins::PluginSlot)>,
+    /// What turns a plugin reference into an instance; CLAP by default
+    /// ([`plugins::default_loader`]).
+    pub plugin_loader: plugins::PluginLoader,
 }
 
 impl Session {
@@ -182,6 +196,8 @@ impl Session {
             midi_inputs: Vec::new(),
             state_file: None,
             state_warned: false,
+            plugins: Vec::new(),
+            plugin_loader: plugins::default_loader(),
         })
     }
 }
@@ -218,8 +234,24 @@ pub struct MixerHandles {
     pub strips: Vec<(TrackId, Arc<StripParams>)>,
     /// A send in the memory → its level and on/off.
     pub sends: Vec<(SendId, Arc<SendParams>)>,
+    /// An insert in the memory → the live controls of its effect. Bypassed
+    /// inserts and plugins have none: they are not in the mixer.
+    pub inserts: Vec<(InsertId, InsertParams)>,
+    /// A plugin insert in the mixer → its parameter queue and its bypass.
+    pub plugins: Vec<(InsertId, PluginHandle)>,
     /// The metronome's click on the master: on/off, level, count-in.
     pub click: Arc<ClickParams>,
+}
+
+/// The live controls of one plugin in the mixer.
+#[derive(Debug)]
+pub struct PluginHandle {
+    /// Parameter changes for the plugin, applied at the start of its next
+    /// block.
+    pub params:
+        crate::primitives::realtime::spsc::Producer<crate::primitives::plugins::ParamChange>,
+    /// While set, the plugin is not run and its input passes through.
+    pub bypass: Arc<core::sync::atomic::AtomicBool>,
 }
 
 impl MixerHandles {
@@ -238,11 +270,147 @@ impl MixerHandles {
             .find(|(id, _)| *id == send)
             .map(|(_, p)| p)
     }
+
+    /// The live controls of a plugin insert, if it is in the mixer.
+    pub fn plugin(&self, insert: InsertId) -> Option<&PluginHandle> {
+        self.plugins
+            .iter()
+            .find(|(id, _)| *id == insert)
+            .map(|(_, p)| p)
+    }
+
+    /// The live controls of a plugin insert, to push a parameter change.
+    pub fn plugin_mut(&mut self, insert: InsertId) -> Option<&mut PluginHandle> {
+        self.plugins
+            .iter_mut()
+            .find(|(id, _)| *id == insert)
+            .map(|(_, p)| p)
+    }
+
+    /// The live controls of an insert, if it is in the mixer.
+    pub fn insert(&self, insert: InsertId) -> Option<&InsertParams> {
+        self.inserts
+            .iter()
+            .find(|(id, _)| *id == insert)
+            .map(|(_, p)| p)
+    }
+}
+
+/// The live controls of one built-in effect in the mixer: the atomics its
+/// node reads on the audio thread, so a value set here is heard at the
+/// next block.
+#[derive(Clone, Debug)]
+pub enum InsertParams {
+    /// A compressor's controls.
+    Compressor(Arc<CompressorParams>),
+    /// A limiter's controls.
+    Limiter(Arc<LimiterParams>),
+    /// A gate's controls.
+    Gate(Arc<GateParams>),
+    /// A de-esser's controls.
+    DeEsser(Arc<DeEsserParams>),
+    /// A leveler's controls.
+    Leveler(Arc<LevelerParams>),
+}
+
+impl InsertParams {
+    /// The node and the controls for a built-in `effect` at its defaults:
+    /// a compressor at -18 dB and 4:1, a limiter under -1 dBTP, a gate at
+    /// -40 dB, a de-esser at 6 kHz and -20 dB, a leveler toward -18 dB.
+    /// `None` for a plugin.
+    pub(crate) fn node(effect: &Effect, channels: usize) -> Option<(Box<dyn Node>, InsertParams)> {
+        Some(match effect {
+            Effect::Compressor => {
+                let params = Arc::new(CompressorParams::new(-18.0, 4.0));
+                (
+                    Box::new(Compressor::new(channels, params.clone())) as Box<dyn Node>,
+                    InsertParams::Compressor(params),
+                )
+            }
+            Effect::Limiter => {
+                let params = Arc::new(LimiterParams::new(-1.0));
+                (
+                    Box::new(Limiter::new(channels, params.clone())),
+                    InsertParams::Limiter(params),
+                )
+            }
+            Effect::Gate => {
+                let params = Arc::new(GateParams::new(-40.0));
+                (
+                    Box::new(Gate::new(channels, params.clone())),
+                    InsertParams::Gate(params),
+                )
+            }
+            Effect::DeEsser => {
+                let params = Arc::new(DeEsserParams::new(6_000.0, -20.0));
+                (
+                    Box::new(DeEsser::new(channels, params.clone())),
+                    InsertParams::DeEsser(params),
+                )
+            }
+            Effect::Leveler => {
+                let params = Arc::new(LevelerParams::new(-18.0));
+                (
+                    Box::new(Leveler::new(channels, params.clone())),
+                    InsertParams::Leveler(params),
+                )
+            }
+            Effect::Plugin(_) => return None,
+        })
+    }
+
+    /// Sets one parameter on the running effect. Fails if the effect has
+    /// no such parameter.
+    pub fn set(&self, param: EffectParam, value: f32) -> Result<()> {
+        use EffectParam::*;
+        match (self, param) {
+            (InsertParams::Compressor(p), Threshold) => p.set_threshold_db(value),
+            (InsertParams::Compressor(p), Ratio) => p.set_ratio(value),
+            (InsertParams::Compressor(p), Attack) => p.set_attack_ms(value),
+            (InsertParams::Compressor(p), Release) => p.set_release_ms(value),
+            (InsertParams::Compressor(p), Knee) => p.set_knee_db(value),
+            (InsertParams::Compressor(p), Makeup) => p.set_makeup_db(value),
+            (InsertParams::Limiter(p), Ceiling) => p.set_ceiling_db(value),
+            (InsertParams::Limiter(p), Release) => p.set_release_ms(value),
+            (InsertParams::Gate(p), Threshold) => p.set_threshold_db(value),
+            (InsertParams::Gate(p), Ratio) => p.set_ratio(value),
+            (InsertParams::Gate(p), Attack) => p.set_attack_ms(value),
+            (InsertParams::Gate(p), Hold) => p.set_hold_ms(value),
+            (InsertParams::Gate(p), Release) => p.set_release_ms(value),
+            (InsertParams::Gate(p), Range) => p.set_range_db(value),
+            (InsertParams::DeEsser(p), Frequency) => p.set_frequency_hz(value),
+            (InsertParams::DeEsser(p), Threshold) => p.set_threshold_db(value),
+            (InsertParams::DeEsser(p), Ratio) => p.set_ratio(value),
+            (InsertParams::Leveler(p), Target) => p.set_target_db(value),
+            (InsertParams::Leveler(p), Range) => p.set_range_db(value),
+            (InsertParams::Leveler(p), Speed) => p.set_speed_db_per_s(value),
+            (InsertParams::Leveler(p), Floor) => p.set_floor_db(value),
+            _ => {
+                return Err(SuperbError::InvalidArgument {
+                    what: "the effect has no such parameter",
+                })
+            }
+        }
+        Ok(())
+    }
+
+    /// How much the effect was turning the signal down at the end of the
+    /// last block, in dB, for a gain-reduction meter. Zero or more, except
+    /// a leveler that is turning the signal up, which reads below zero.
+    pub fn reduction_db(&self) -> f32 {
+        match self {
+            InsertParams::Compressor(p) => p.reduction_db(),
+            InsertParams::Limiter(p) => p.reduction_db(),
+            InsertParams::Gate(p) => p.reduction_db(),
+            InsertParams::DeEsser(p) => p.reduction_db(),
+            InsertParams::Leveler(p) => -p.gain_db(),
+        }
+    }
 }
 
 /// Starts a new, empty session at 120 bpm in 4/4 in `folder`, which is
-/// created with the folders of its [`Layout`] (`audio/`, `bounces/`,
-/// `stems/`) and given its `memory.json` at once, so it can be opened from
+/// created with the folders of its [`Layout`] (`audio/`, `plugins/`,
+/// `bounces/`, `stems/`) and given its `memory.json` at once, so it can be opened from
 /// here on. The session is named after the folder. Under the default
 /// [`Root`] that is `session::create(Root::default().folder("My Show"),
 /// ..)`, which makes `~/superb/My Show/`.
@@ -260,9 +428,13 @@ pub fn create(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "session".into());
     let layout = Layout::new(folder);
-    for dir in [layout.audio(), layout.bounces(), layout.stems()] {
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| SuperbError::Message(format!("cannot create {}: {e}", dir.display())))?;
+    for dir in [
+        layout.audio(),
+        layout.plugins(),
+        layout.bounces(),
+        layout.stems(),
+    ] {
+        std::fs::create_dir_all(&dir).map_err(|e| SuperbError::io("create", &dir, &e))?;
     }
     let session = Session::new(Memory::new(name, sample_rate), folder, block_size)?;
     session.memory.save(folder.join(folder::MEMORY_FILE))?;
@@ -273,20 +445,23 @@ pub fn create(
     Ok(session)
 }
 
-/// Opens a session folder written by [`save`]: reads `memory.json` and
-/// loads every WAV file the clips refer to into [`Session::audio`]. A file
+/// Opens a session folder written by [`save`]: reads `memory.json`,
+/// loads every WAV file the clips refer to into [`Session::audio`], and
+/// reads what each plugin saved of itself from `plugins/`. A file
 /// that is missing or at another sample rate is left out, and its clip
 /// plays as silence. The undo history starts empty and clean. Recordings
 /// a crash left unfinished are noted in the log, not placed:
 /// [`record::recover`](crate::record::recover) does that.
 ///
 /// Made of: `Memory::load` → `Session::new` → `wav::read` per audio clip →
+/// `fs::read` per plugin state file →
 /// [`record::unfinished`](crate::record::unfinished).
 pub fn open(folder: impl AsRef<Path>, block_size: usize) -> Result<Session> {
     let folder = folder.as_ref();
     let memory = Memory::load(folder.join(folder::MEMORY_FILE))?;
     let mut session = Session::new(memory, folder, block_size)?;
     folder::load_audio(&mut session, folder);
+    folder::load_plugin_state(&mut session, folder);
     log::info!(
         "{}: opened; state (mute, solo, arm, monitor, input, MIDI channel, clip mute, send on/off, looping, click, count-in, playhead) is not saved until session::state_file names a file",
         folder.display()
@@ -308,7 +483,7 @@ pub fn open(folder: impl AsRef<Path>, block_size: usize) -> Result<Session> {
 }
 
 /// Where each part of the session lives inside its folder: `memory.json`,
-/// `state.json`, `audio/`, `bounces/`, `stems/<name>/`.
+/// `state.json`, `audio/`, `plugins/`, `bounces/`, `stems/<name>/`.
 ///
 /// Made of: [`Layout::new`] on [`Session::folder`].
 pub fn layout(session: &Session) -> Layout {
@@ -317,17 +492,22 @@ pub fn layout(session: &Session) -> Layout {
 
 /// Saves the session into its folder: the memory as `memory.json`, after
 /// writing any audio a clip refers to that is not on disk yet (recordings
-/// already are). The history remembers this state as saved
-/// (`session.history.is_clean()`).
+/// already are). Each plugin is asked for its state as it is now, which
+/// goes to a file of its own (`plugins/<insert id>.state`), and whatever a
+/// plugin changed itself since [`plugin::changes`](crate::plugin::changes)
+/// was last asked is taken into the memory first. The history remembers
+/// this state as saved (`session.history.is_clean()`).
 ///
-/// Made of: `wav::write` per audio clip not yet on disk → `Memory::save` →
-/// `UndoStack::mark_clean`.
+/// Made of: `wav::write` per audio clip not yet on disk →
+/// `PluginControl::save_state` per loaded plugin → `fs::write` per plugin
+/// state → `MemorySnapshot` as JSON → `UndoStack::mark_clean`.
 pub fn save(session: &mut Session) -> Result<()> {
     let folder = session.folder.clone();
-    std::fs::create_dir_all(&folder)
-        .map_err(|e| SuperbError::Message(format!("cannot create {}: {e}", folder.display())))?;
+    std::fs::create_dir_all(&folder).map_err(|e| SuperbError::io("create", &folder, &e))?;
     folder::write_missing_audio(session, &folder)?;
-    session.memory.save(folder.join(folder::MEMORY_FILE))?;
+    plugins::hear(session);
+    plugins::store_state(session, None);
+    folder::write_memory(session, &folder)?;
     session.history.mark_clean();
     if session.state_file.is_none() {
         log::info!(
@@ -448,8 +628,7 @@ fn read_audio(
 )> {
     let (audio, file_rate, format) = crate::primitives::io::wav::read_with_format(file)?;
     if file_rate != rate {
-        return Err(SuperbError::Message(format!(
-            "{} is at {} Hz and the session at {} Hz; the `files` feature resamples and reads other formats",
+        return Err(SuperbError::Unsupported(format!("{} is at {} Hz and the session at {} Hz; the `files` feature resamples and reads other formats",
             file.display(),
             file_rate.hz(),
             rate.hz()
@@ -524,7 +703,7 @@ pub(crate) fn scratch(tag: &str) -> PathBuf {
 ///
 /// Made of: `SetTempo` at beat 0 (`ramped` when the start already ramps)
 /// through `session::structural`.
-pub fn set_tempo(session: &mut Session, bpm: f64) -> Result<()> {
+pub fn tempo(session: &mut Session, bpm: f64) -> Result<()> {
     let ramps = session
         .memory
         .tempo_map()
@@ -577,7 +756,7 @@ pub fn meter_change(
 /// Turn looping on with [`transport::looping`](crate::transport::looping).
 ///
 /// Made of: push `SetLoopRange` → `EngineHandle::send(SetLoop)`.
-pub fn set_loop(session: &mut Session, range: Option<LoopRange>) -> Result<()> {
+pub fn loop_range(session: &mut Session, range: Option<LoopRange>) -> Result<()> {
     edit(session, SetLoopRange::new(range))?;
     session.engine.send(EngineCommand::SetLoop(range))
 }
@@ -632,7 +811,7 @@ pub(crate) fn changed_structure(session: &mut Session) -> Result<()> {
 }
 
 /// Changes state (mute, solo, arm, monitor, input, clip mute, send on/off,
-/// looping, the click, count-in) on the memory. State is not an edit: it
+/// insert bypass, looping, the click, count-in) on the memory. State is not an edit: it
 /// never enters the undo history and does not make the session unsaved;
 /// it is written to the state file at once, if [`state_file`] named one.
 pub(crate) fn set_state(
@@ -666,7 +845,7 @@ mod tests {
     fn create_edit_undo_redo() {
         let mut session = create(scratch("demo"), R, 64).unwrap();
         assert!(session.history.is_clean());
-        assert!(session.needs_rebuild, "a fresh session has no console yet");
+        assert!(session.needs_rebuild, "a fresh session has no mixer yet");
         session.needs_rebuild = false;
 
         let vox = track::add(&mut session, "vox", TrackKind::Audio).unwrap();
@@ -692,7 +871,7 @@ mod tests {
         clip::move_to(&mut session, clip, vox, TimePosition::from_samples(300)).unwrap();
         session.history.seal(); // "mouse up"; a pause would do the same
         let marker = crate::marker::add(&mut session, "verse", TimePosition::ZERO).unwrap();
-        set_tempo(&mut session, 90.0).unwrap();
+        tempo(&mut session, 90.0).unwrap();
         assert_eq!(
             session.history.undo_len(),
             6,
@@ -770,7 +949,7 @@ mod tests {
             ClipSource::Midi { .. }
         ));
         let range = LoopRange::new(TimePosition::ZERO, TimePosition::from_samples(1_000)).unwrap();
-        set_loop(&mut session, Some(range)).unwrap();
+        loop_range(&mut session, Some(range)).unwrap();
         assert_eq!(session.memory.loop_range(), Some(range));
         // The engine received the range too: apply it on the audio side.
         session.audio_thread.as_mut().unwrap().apply_commands();
@@ -955,7 +1134,7 @@ mod tests {
         assert!(state.is_file());
         track::solo(&mut session, vox, true).unwrap();
         crate::transport::looping(&mut session, true).unwrap();
-        crate::metronome::enable(&mut session, true).unwrap();
+        crate::metronome::on(&mut session, true).unwrap();
         crate::metronome::count_in(&mut session, 1).unwrap();
         let written = std::fs::read_to_string(&state).unwrap();
         assert!(written.contains("\"solo\": true") && written.contains("\"looping\": true"));
@@ -1103,7 +1282,7 @@ mod tests {
         assert!(seconds > 2.0 && seconds < 4.0, "between all-120 and all-60");
 
         // Moving the starting tempo leaves the start a ramp.
-        set_tempo(&mut session, 100.0).unwrap();
+        tempo(&mut session, 100.0).unwrap();
         let start = session.memory.tempo_map().tempo_points()[0];
         assert!(start.ramp && start.bpm == 100.0);
 
@@ -1162,7 +1341,7 @@ mod tests {
             Some(TempoChange::Step(240.0)),
         )
         .unwrap();
-        crate::metronome::enable(&mut session, true).unwrap();
+        crate::metronome::on(&mut session, true).unwrap();
         crate::transport::start(&mut session).unwrap();
         let blocks = 1_400; // about half a minute
         let audio = steps::render_blocks(&mut session, blocks).unwrap();

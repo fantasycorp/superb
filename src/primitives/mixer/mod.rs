@@ -1,6 +1,6 @@
 //! # primitives::mixer
 //!
-//! A mixing console built on [`AudioGraph`](crate::primitives::graph::AudioGraph).
+//! A mixer built on [`AudioGraph`](crate::primitives::graph::AudioGraph).
 //!
 //! * [`Mixer`] — owns a graph and wires **tracks**, **buses**, a **master**
 //!   bus and **sends** into it. Implements
@@ -41,10 +41,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-mod console;
 mod params;
+mod routing;
 mod strip;
 
-pub use console::{BusInfo, Mixer, SendInfo, SendTap, StripId, TrackInfo};
 pub use params::{PanLaw, SendParams, StripParams};
+pub use routing::{BusInfo, Mixer, SendInfo, SendTap, StripId, TrackInfo};
 pub use strip::{SendNode, StripNode};

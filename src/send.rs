@@ -71,10 +71,7 @@ pub fn add(
     tap: SendTap,
 ) -> Result<SendId> {
     let id = session.memory.allocate_send_id();
-    let mut send = TrackSend::with_id(id, bus).level_db(level_db);
-    if tap == SendTap::PreFader {
-        send = send.pre_fader();
-    }
+    let send = TrackSend::with_id(id, bus).level_db(level_db).tap(tap);
     crate::session::structural(session, AddSend::new(track, send))?;
     Ok(id)
 }
@@ -104,7 +101,7 @@ pub fn level(session: &mut Session, send: SendId, db: f32) -> Result<()> {
 ///
 /// Made of: `SendState::enabled` through `session::set_state` →
 /// `SendParams::set_enabled` on the live send.
-pub fn enable(session: &mut Session, send: SendId, on: bool) -> Result<()> {
+pub fn on(session: &mut Session, send: SendId, on: bool) -> Result<()> {
     crate::session::set_state(session, |s| {
         s.send_mut(send)?.state.enabled = on;
         Ok(())
@@ -216,7 +213,7 @@ mod tests {
         assert!(session.needs_rebuild);
         let send = add(&mut session, vox, room, 0.0, SendTap::PostFader).unwrap();
         assert_eq!(session.memory.send(send).unwrap().bus(), room);
-        assert!(!session.memory.send(send).unwrap().pre_fader);
+        assert_eq!(session.memory.send(send).unwrap().tap, SendTap::PostFader);
         session::steps::rebuild(&mut session).unwrap();
         balance_all(&session);
         assert!(
@@ -230,7 +227,7 @@ mod tests {
             "live send level"
         );
         let steps = session.history.undo_len();
-        enable(&mut session, send, false).unwrap();
+        on(&mut session, send, false).unwrap();
         assert!((settled(&mut session) - direct).abs() < 1e-3);
         assert!(!session.memory.send(send).unwrap().state.enabled);
         assert_eq!(session.history.undo_len(), steps, "a switch, not an edit");

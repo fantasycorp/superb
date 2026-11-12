@@ -106,14 +106,14 @@ pub fn scan_directory(dir: impl AsRef<Path>, format: PluginFormat) -> Result<Sca
         return Err(crate::primitives::plugins::vst3::unsupported());
     }
     if !cfg!(feature = "clap") {
-        return Err(SuperbError::Message(
+        return Err(SuperbError::Unsupported(
             "CLAP hosting is disabled (feature `clap`)".into(),
         ));
     }
     let mut report = ScanReport::default();
     let mut bundles = Vec::new();
     collect_bundles(dir, format.extension(), &mut bundles)
-        .map_err(|e| SuperbError::Message(format!("scan {}: {e}", dir.display())))?;
+        .map_err(|e| SuperbError::io("scan", dir, &e))?;
     bundles.sort();
     for bundle in bundles {
         load_descriptors(&bundle, format, &mut report);

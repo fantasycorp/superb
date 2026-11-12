@@ -117,6 +117,15 @@ name = "record_take"
 path = "examples/flows/record_take.rs"
 
 [[example]]
+name = "insert_chain"
+path = "examples/flows/insert_chain.rs"
+
+[[example]]
+name = "plugin_insert"
+path = "examples/flows/plugin_insert.rs"
+required-features = ["clap"]
+
+[[example]]
 name = "metronome_count_in"
 path = "examples/flows/metronome_count_in.rs"
 

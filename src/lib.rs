@@ -6,7 +6,7 @@
 //! The crate has two tiers, so you always know what a call will do:
 //!
 //! * **Flows** are top-level modules named after everyday tasks:
-//!   [`session`], [`track`], [`clip`], [`marker`], [`transport`], [`send`], [`midi`],
+//!   [`session`], [`track`], [`clip`], [`marker`], [`transport`], [`send`], [`insert`], [`plugin`], [`midi`],
 //!   [`record`], [`metronome`], [`export`] and [`devices`]. Each is a set of free functions over a
 //!   [`session::Session`] (its memory, undo history, audio and running engine), and every function's docs
 //!   end with a "Made of:" list of the primitive calls it performs, so you
@@ -77,9 +77,11 @@
 pub mod clip;
 pub mod devices;
 pub mod export;
+pub mod insert;
 pub mod marker;
 pub mod metronome;
 pub mod midi;
+pub mod plugin;
 pub mod primitives;
 pub mod record;
 pub mod send;
@@ -108,6 +110,10 @@ mod markdown_examples {
     mod transport {}
     #[doc = include_str!("../docs/flows/send.md")]
     mod send {}
+    #[doc = include_str!("../docs/flows/insert.md")]
+    mod insert {}
+    #[doc = include_str!("../docs/flows/plugin.md")]
+    mod plugin {}
     #[doc = include_str!("../docs/flows/midi.md")]
     mod midi {}
     #[doc = include_str!("../docs/flows/record.md")]

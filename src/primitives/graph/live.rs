@@ -292,7 +292,8 @@ impl LiveGraph {
     ///
     /// Returns `true` if the active graph changed. Wait-free and
     /// allocation-free: each swap is two pointer moves and two queue
-    /// operations. If several swaps are queued they are applied in order, so
+    /// operations, plus a pointer move per node that carries something
+    /// across ([`Node::carry`](crate::primitives::graph::Node::carry)). If several swaps are queued they are applied in order, so
     /// the newest graph ends up active and every intermediate one is recycled.
     /// Never drops a graph: if the recycle queue is full the retired graph is
     /// parked and further swaps wait until it has been handed back.
@@ -313,6 +314,9 @@ impl LiveGraph {
                 if self.config.is_none() {
                     self.config = incoming.prepared_config();
                 }
+                // What the outgoing graph's nodes carry (plugin instances)
+                // moves into the incoming graph's nodes of the same key.
+                incoming.adopt_from(&mut self.active);
                 mem::swap(&mut self.active, &mut incoming);
                 self.swap_count += 1;
                 self.counters.applied.fetch_add(1, Ordering::Release);

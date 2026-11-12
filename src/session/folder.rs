@@ -8,6 +8,7 @@
 //!   memory.json     the session's edits (session::save)
 //!   state.json      its state, once session::state_file names this file
 //!   audio/          what clips play: recordings and imports, 32-bit float
+//!   plugins/        what each plugin saved of itself, <insert id>.state
 //!   bounces/        mixes from export::bounce
 //!   stems/<name>/   stem sets from export::stems, each with a manifest.json
 //! ```
@@ -16,15 +17,19 @@
 //! application keeps them elsewhere. A clip's audio key is a path relative
 //! to the session folder (`audio/vox 1.wav`). Recordings stream into
 //! `audio/` as they run, `save` writes whatever a clip refers to that is
-//! not on disk yet, and `open` reads it all back. Undoing a recording
-//! deletes the files it wrote; nothing else deletes a file.
+//! not on disk yet, and `open` reads it all back. A plugin's saved state
+//! is bytes only the plugin can read, and can be large, so `save` writes it
+//! to `plugins/` rather than into `memory.json`. Undoing a recording
+//! deletes the files it wrote, and `save` deletes the state file of a
+//! plugin insert that is no longer in the session; nothing else deletes a
+//! file.
 
 use std::path::{Path, PathBuf};
 
 use crate::primitives::buffers::PlanarBuffer;
 use crate::primitives::io::wav::{self, WavFormat};
-use crate::primitives::session::ClipSource;
-use crate::primitives::{Result, SampleRate, SuperbError};
+use crate::primitives::session::{ClipSource, Effect};
+use crate::primitives::{InsertId, RawId, Result, SampleRate, SuperbError};
 use crate::session::Session;
 
 /// The memory's file inside the session folder.
@@ -33,6 +38,10 @@ pub(crate) const MEMORY_FILE: &str = "memory.json";
 pub(crate) const STATE_FILE: &str = "state.json";
 /// Where recordings and imports go inside the session folder.
 pub(crate) const AUDIO_DIR: &str = "audio";
+/// Where each plugin's saved state goes, one file per plugin insert.
+pub(crate) const PLUGINS_DIR: &str = "plugins";
+/// The extension of a plugin's state file.
+pub(crate) const PLUGIN_STATE_EXT: &str = "state";
 /// Where bounces go.
 pub(crate) const BOUNCES_DIR: &str = "bounces";
 /// Where stem sets go, one folder each.
@@ -78,12 +87,7 @@ impl Root {
         let entries = match std::fs::read_dir(&self.path) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(e) => {
-                return Err(SuperbError::Message(format!(
-                    "cannot read {}: {e}",
-                    self.path.display()
-                )))
-            }
+            Err(e) => return Err(SuperbError::io("read", &self.path, &e)),
         };
         let mut sessions: Vec<PathBuf> = entries
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -119,6 +123,7 @@ impl Default for Root {
 /// assert_eq!(layout.memory(), Path::new("/music/My Show/memory.json"));
 /// assert_eq!(layout.state(), Path::new("/music/My Show/state.json"));
 /// assert_eq!(layout.audio(), Path::new("/music/My Show/audio"));
+/// assert_eq!(layout.plugins(), Path::new("/music/My Show/plugins"));
 /// assert_eq!(layout.bounces(), Path::new("/music/My Show/bounces"));
 /// assert_eq!(
 ///     layout.bounce("rough mix"),
@@ -162,6 +167,33 @@ impl Layout {
     /// `audio/`: what clips play, recordings and imports.
     pub fn audio(&self) -> PathBuf {
         self.folder.join(AUDIO_DIR)
+    }
+
+    /// `plugins/`: what each plugin saved of itself.
+    pub fn plugins(&self) -> PathBuf {
+        self.folder.join(PLUGINS_DIR)
+    }
+
+    /// `plugins/<insert id>.state`: the bytes the plugin of `insert` saved,
+    /// as `session::save` writes them. Only that plugin can read them.
+    ///
+    /// ```
+    /// use std::path::Path;
+    /// use superb::primitives::InsertId;
+    /// use superb::session::Layout;
+    ///
+    /// let layout = Layout::new("/music/My Show");
+    /// assert_eq!(
+    ///     layout.plugin_state(InsertId::from_raw(12)),
+    ///     Path::new("/music/My Show/plugins/12.state")
+    /// );
+    /// ```
+    pub fn plugin_state(&self, insert: InsertId) -> PathBuf {
+        self.plugin_state_raw(insert.raw())
+    }
+
+    fn plugin_state_raw(&self, insert: RawId) -> PathBuf {
+        self.plugins().join(format!("{insert}.{PLUGIN_STATE_EXT}"))
     }
 
     /// `bounces/`: mixes.
@@ -216,9 +248,7 @@ pub(crate) fn write_audio(
 ) -> Result<()> {
     let path = folder.join(key);
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            SuperbError::Message(format!("cannot create {}: {e}", parent.display()))
-        })?;
+        std::fs::create_dir_all(parent).map_err(|e| SuperbError::io("create", parent, &e))?;
     }
     wav::write(&path, audio, rate, WavFormat::Float32)
 }
@@ -260,6 +290,75 @@ pub(crate) fn write_missing_audio(session: &Session, folder: &Path) -> Result<()
     Ok(())
 }
 
+/// Writes the memory to `folder` as `memory.json`, and what each plugin
+/// saved of itself beside it, one file per plugin insert under `plugins/`,
+/// so the memory's file stays small and readable. The state file of a
+/// plugin insert the memory no longer holds is deleted.
+pub(crate) fn write_memory(session: &Session, folder: &Path) -> Result<()> {
+    let layout = Layout::new(folder);
+    let mut snapshot = session.memory.snapshot();
+    let mut kept: Vec<RawId> = Vec::new();
+    for track in snapshot.tracks.iter_mut().chain(snapshot.master.as_mut()) {
+        for insert in &mut track.inserts {
+            let state = std::mem::take(&mut insert.preset);
+            if state.is_empty() {
+                continue;
+            }
+            let dir = layout.plugins();
+            std::fs::create_dir_all(&dir).map_err(|e| SuperbError::io("create", &dir, &e))?;
+            let path = layout.plugin_state_raw(insert.id);
+            std::fs::write(&path, &state).map_err(|e| SuperbError::io("write", &path, &e))?;
+            kept.push(insert.id);
+        }
+    }
+    let json = serde_json::to_string_pretty(&snapshot)
+        .map_err(|e| SuperbError::Message(format!("serialise session: {e}")))?;
+    let path = layout.memory();
+    std::fs::write(&path, json).map_err(|e| SuperbError::io("write", &path, &e))?;
+    // Only after the memory is written: until then the old memory.json may
+    // still name the inserts these files belong to.
+    if let Ok(entries) = std::fs::read_dir(layout.plugins()) {
+        for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+            let ours = path.extension().is_some_and(|e| e == PLUGIN_STATE_EXT);
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.parse::<RawId>().ok());
+            if let (true, Some(id)) = (ours, id) {
+                if !kept.contains(&id) {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reads what each plugin insert's plugin saved of itself from `plugins/`
+/// in `folder` into the memory. An insert without a file keeps what
+/// `memory.json` held for it (files written before plugin state had files
+/// of its own hold it there).
+pub(crate) fn load_plugin_state(session: &mut Session, folder: &Path) {
+    let layout = Layout::new(folder);
+    let inserts: Vec<InsertId> = session
+        .memory
+        .tracks()
+        .iter()
+        .chain(std::iter::once(session.memory.master()))
+        .flat_map(|track| track.inserts())
+        .filter(|insert| matches!(insert.effect, Effect::Plugin(_)))
+        .map(|insert| insert.id())
+        .collect();
+    for id in inserts {
+        let Ok(state) = std::fs::read(layout.plugin_state(id)) else {
+            continue;
+        };
+        if let Ok(insert) = session.memory.insert_mut(id) {
+            insert.preset = state;
+        }
+    }
+}
+
 /// Loads every WAV file a clip refers to from `folder` into the session's
 /// audio. A file that is missing, unreadable or at another sample rate is
 /// left out: its clip plays as silence.
@@ -299,6 +398,11 @@ mod tests {
         assert_eq!(layout.memory(), Path::new("/music/My Show/memory.json"));
         assert_eq!(layout.state(), Path::new("/music/My Show/state.json"));
         assert_eq!(layout.audio(), Path::new("/music/My Show/audio"));
+        assert_eq!(layout.plugins(), Path::new("/music/My Show/plugins"));
+        assert_eq!(
+            layout.plugin_state(InsertId::from_raw(12)),
+            Path::new("/music/My Show/plugins/12.state")
+        );
         assert_eq!(layout.bounces(), Path::new("/music/My Show/bounces"));
         assert_eq!(
             layout.bounce("rough mix"),
@@ -352,7 +456,12 @@ mod tests {
         );
         // A session is made with every folder of its layout.
         let layout = session::layout(&a);
-        for dir in [layout.audio(), layout.bounces(), layout.stems()] {
+        for dir in [
+            layout.audio(),
+            layout.plugins(),
+            layout.bounces(),
+            layout.stems(),
+        ] {
             assert!(dir.is_dir(), "{}", dir.display());
         }
         assert!(layout.memory().is_file());

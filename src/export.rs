@@ -104,9 +104,9 @@ pub fn bounce(session: &mut Session, path: impl AsRef<Path>, what: Bounce) -> Re
         }
     };
     if length.samples() <= 0 {
-        return Err(SuperbError::Message(
-            "nothing to bounce: no clips after the start, and no length given".into(),
-        ));
+        return Err(SuperbError::InvalidState {
+            why: "nothing to bounce: no clips after the start, and no length given",
+        });
     }
     let audio = render(session, what.start, length.samples() as usize)?;
     let session_rate = session.memory.sample_rate();
@@ -122,8 +122,9 @@ pub fn bounce(session: &mut Session, path: impl AsRef<Path>, what: Bounce) -> Re
 /// Makes the folder `path` goes in, when it has one.
 fn make_parent(path: &Path) -> Result<()> {
     match path.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => std::fs::create_dir_all(dir)
-            .map_err(|e| SuperbError::Message(format!("cannot create {}: {e}", dir.display()))),
+        Some(dir) if !dir.as_os_str().is_empty() => {
+            std::fs::create_dir_all(dir).map_err(|e| SuperbError::io("create", dir, &e))
+        }
         _ => Ok(()),
     }
 }
@@ -135,8 +136,16 @@ pub(crate) fn render(
     start: TimePosition,
     frames: usize,
 ) -> Result<PlanarBuffer> {
-    let (mixer, handles) =
-        session::steps::build_mixer(&session.memory, &session.audio, session.channels)?;
+    let channels = session.channels;
+    let (mixer, handles, _) = {
+        let (slots, loader) = (&mut session.plugins, &mut session.plugin_loader);
+        session::steps::build_mixer_placing(
+            &session.memory,
+            &session.audio,
+            channels,
+            &mut |insert| session::plugins::place_copy(slots, loader, insert, channels),
+        )?
+    };
     handles.click.set_enabled(false);
     let mut transport = Transport::with_tempo_map(session.memory.tempo_map().clone());
     transport.seek(start);
@@ -266,19 +275,21 @@ pub fn stems(session: &mut Session, name: &str, what: Stems) -> Result<StemSet> 
         ),
     };
     if length.samples() <= 0 {
-        return Err(SuperbError::Message(
-            "no stems to bounce: no clips after the start, and no length given".into(),
-        ));
+        return Err(SuperbError::InvalidState {
+            why: "no stems to bounce: no clips after the start, and no length given",
+        });
     }
     let folder = session::layout(session).stem_set(name);
     if folder.exists() {
-        return Err(SuperbError::Message(format!(
-            "{} already exists; a stem set is never overwritten, so choose another name",
-            folder.display()
-        )));
+        return Err(SuperbError::Io {
+            action: "create",
+            path: Some(folder),
+            kind: std::io::ErrorKind::AlreadyExists,
+            reason: "it already exists; a stem set is never overwritten, so choose another name"
+                .into(),
+        });
     }
-    std::fs::create_dir_all(&folder)
-        .map_err(|e| SuperbError::Message(format!("cannot create {}: {e}", folder.display())))?;
+    std::fs::create_dir_all(&folder).map_err(|e| SuperbError::io("create", &folder, &e))?;
     let written = write_stems(session, &folder, name, &what, length.samples() as u64);
     if written.is_err() {
         // The folder is this call's own: nothing else was in it.
@@ -347,8 +358,15 @@ fn write_stems(
     let rate = session.memory.sample_rate();
     let channels = session.channels;
     let block = session.engine.max_frames();
-    let (mixer, handles, strips) =
-        session::steps::build_mixer_with_strips(&session.memory, &session.audio, channels)?;
+    let (mixer, handles, strips) = {
+        let (slots, loader) = (&mut session.plugins, &mut session.plugin_loader);
+        session::steps::build_mixer_placing(
+            &session.memory,
+            &session.audio,
+            channels,
+            &mut |insert| session::plugins::place_copy(slots, loader, insert, channels),
+        )?
+    };
     mixer.clear_solo();
     handles.click.set_enabled(false);
     let master = session.memory.master().id();
@@ -469,8 +487,7 @@ fn write_stems(
     let json = serde_json::to_string_pretty(&set)
         .map_err(|e| SuperbError::Message(format!("cannot encode the stem manifest: {e}")))?;
     let manifest = folder.join("manifest.json");
-    std::fs::write(&manifest, json)
-        .map_err(|e| SuperbError::Message(format!("cannot write {}: {e}", manifest.display())))?;
+    std::fs::write(&manifest, json).map_err(|e| SuperbError::io("write", &manifest, &e))?;
     Ok(set)
 }
 
@@ -494,7 +511,7 @@ fn resample(audio: &PlanarBuffer, from: SampleRate, to: SampleRate) -> Result<Pl
 
 #[cfg(not(feature = "files"))]
 fn resample(_audio: &PlanarBuffer, _from: SampleRate, _to: SampleRate) -> Result<PlanarBuffer> {
-    Err(SuperbError::Message(
+    Err(SuperbError::Unsupported(
         "converting a bounce to another sample rate needs the `files` feature".into(),
     ))
 }
@@ -580,7 +597,7 @@ mod tests {
     #[test]
     fn a_bounce_leaves_the_click_out_and_makes_its_folder() {
         let mut session = tone_rig();
-        crate::metronome::enable(&mut session, true).unwrap();
+        crate::metronome::on(&mut session, true).unwrap();
         let path = session::layout(&session)
             .bounces()
             .join("nested")

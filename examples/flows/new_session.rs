@@ -2,7 +2,7 @@
 //! `clip::add` put tracks and clips in the Memory.
 //!
 //! ```text
-//! session::create / open / save / set_tempo / undo / redo
+//! session::create / open / save / tempo / undo / redo
 //! track::add
 //! clip::add / move_to
 //! marker::add
@@ -11,7 +11,7 @@
 //! ```text
 //! let mut session = session::create(&folder, SampleRate::HZ_48K, 256)?;
 //! let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
-//! clip::add(&mut session, vox, "audio/take.wav", TimePosition::ZERO)?;
+//! clip::add(&mut session, vox, "audio/vox.wav", TimePosition::ZERO)?;
 //! session::save(&mut session)?;
 //! let again = session::open(&folder, 256)?;
 //! ```
@@ -35,20 +35,20 @@ fn main() -> Result<()> {
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
     let keys = track::add(&mut session, "keys", TrackKind::Midi)?;
 
-    // 1 s of 220 Hz sine at 0.3, stereo, keyed "audio/vox-take-1.wav".
-    let mut take = PlanarBuffer::new(2, rate.hz() as usize);
+    // 1 s of 220 Hz sine at 0.3, stereo, keyed "audio/vox-1.wav".
+    let mut tone = PlanarBuffer::new(2, rate.hz() as usize);
     for ch in 0..2 {
-        for (i, s) in take.channel_mut(ch).iter_mut().enumerate() {
+        for (i, s) in tone.channel_mut(ch).iter_mut().enumerate() {
             let t = i as f32 / rate.hz() as f32;
             *s = 0.3 * (t * 220.0 * core::f32::consts::TAU).sin();
         }
     }
-    session.audio.insert("audio/vox-take-1.wav", take);
-    // Clip at 0.5 s, named "vox-take-1".
+    session.audio.insert("audio/vox-1.wav", tone);
+    // Clip at 0.5 s, named "vox-1".
     let clip = clip::add(
         &mut session,
         vox,
-        "audio/vox-take-1.wav",
+        "audio/vox-1.wav",
         TimePosition::from_seconds(0.5, rate),
     )?;
 
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
     clip::add(&mut session, keys, notes, TimePosition::ZERO)?;
 
     // Tempo 100. Marker "verse" at 0.5 s.
-    session::set_tempo(&mut session, 100.0)?;
+    session::tempo(&mut session, 100.0)?;
     marker::add(&mut session, "verse", TimePosition::from_seconds(0.5, rate))?;
     println!(
         "{}: {} tracks, {} clips, {} bpm",
@@ -100,7 +100,7 @@ fn main() -> Result<()> {
         session.memory.clip(clip)?.start().to_seconds(rate)
     );
 
-    // save writes memory.json and audio/vox-take-1.wav.
+    // save writes memory.json and audio/vox-1.wav.
     println!("saved? {}", session.history.is_clean());
     session::save(&mut session)?;
     println!(

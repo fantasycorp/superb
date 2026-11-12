@@ -26,9 +26,7 @@
 //! transport::start(&mut session)?;
 //! let before = session::steps::render_blocks(&mut session, 2)?;
 //! assert!(before.peak() > 0.3);
-//! session
-//!     .history
-//!     .push(&mut session.memory, commands::set_track_mute(vox, true))?;
+//! session.memory.track_mut(vox)?.state.mute = true;
 //! transport::rewind(&mut session)?;
 //! session::steps::rebuild(&mut session)?;
 //! let after = session::steps::render_blocks(&mut session, 3)?;
@@ -54,11 +52,13 @@ use crate::primitives::graph::nodes::{
 use crate::primitives::graph::MidiPort;
 use crate::primitives::io::cache::AudioCache;
 use crate::primitives::io::{EngineCommand, EngineHandle};
-use crate::primitives::mixer::{Mixer, SendParams, SendTap, StripId, StripParams};
+use crate::primitives::mixer::{Mixer, SendParams, StripId, StripParams};
+use crate::primitives::plugins::PluginNode;
+use crate::primitives::session::Insert;
 use crate::primitives::session::{Clip, ClipSource, Input, Memory, MidiNote, TrackKind};
 use crate::primitives::transport::TempoMap;
-use crate::primitives::{BeatPosition, Result, SendId, SuperbError, TrackId};
-use crate::session::{MixerHandles, Session};
+use crate::primitives::{BeatPosition, InsertId, Result, SendId, SuperbError, TrackId};
+use crate::session::{plugins, InsertParams, MixerHandles, PluginHandle, Session};
 
 /// Rebuilds the mixer from the memory and swaps it into the engine.
 ///
@@ -82,7 +82,15 @@ use crate::session::{MixerHandles, Session};
 /// [`Session::mixer`] holds the new strip and send controls.
 pub fn rebuild(session: &mut Session) -> Result<()> {
     session.engine.reclaim();
-    let (mixer, handles) = build_mixer(&session.memory, &session.audio, session.channels)?;
+    plugins::begin_build(&mut session.plugins);
+    let channels = session.channels;
+    let (mixer, mut handles, _) = {
+        let (slots, loader) = (&mut session.plugins, &mut session.plugin_loader);
+        build_mixer_placing(&session.memory, &session.audio, channels, &mut |insert| {
+            plugins::place(slots, loader, insert, channels)
+        })?
+    };
+    plugins::finish_build(session, &mut handles);
     // The pan law is set on the live strip and the memory does not hold
     // it, so a strip that was there before keeps the one it had.
     for (track, strip) in &handles.strips {
@@ -90,7 +98,14 @@ pub fn rebuild(session: &mut Session) -> Result<()> {
             strip.set_pan_law(before.pan_law());
         }
     }
-    publish(&mut session.engine, mixer)?;
+    if let Err(error) = publish(&mut session.engine, mixer) {
+        // The mixer that was not swapped in may hold plugin instances on
+        // their way into the engine. They go with it; the next rebuild
+        // loads them again from what the memory holds.
+        drop(session.engine.editor().replace_draft(Default::default()));
+        session.plugins.clear();
+        return Err(error);
+    }
     session
         .engine
         .send(EngineCommand::TempoMap(session.memory.tempo_map().clone()))?;
@@ -124,9 +139,12 @@ pub fn render_blocks(session: &mut Session, blocks: usize) -> Result<PlanarBuffe
         rebuild(session)?;
     }
     let block = session.engine.max_frames();
-    let audio_thread = session.audio_thread.as_mut().ok_or_else(|| {
-        SuperbError::Message("the audio thread is running on a device stream".into())
-    })?;
+    let audio_thread = session
+        .audio_thread
+        .as_mut()
+        .ok_or(SuperbError::InvalidState {
+            why: "the audio thread is running on a device stream",
+        })?;
     let mut out = PlanarBuffer::new(session.channels, blocks * block);
     let mut scratch = PlanarBuffer::new(session.channels, block);
     for i in 0..blocks {
@@ -143,8 +161,9 @@ pub fn render_blocks(session: &mut Session, blocks: usize) -> Result<PlanarBuffe
 
 /// Builds a fresh mixer for the memory and returns it with the handles
 /// the control side keeps: a strip per track and bus carrying the track's
-/// state, each track's output routed where the memory says, a send per
-/// send in the memory, a node per audible clip, a synth on every
+/// state, each track's output routed where the memory says, each strip's
+/// built-in inserts in chain order (bypassed inserts and plugins are left
+/// out), a send per send in the memory, a node per audible clip, a synth on every
 /// monitoring MIDI track so notes arriving now become audio, and a tap on
 /// the engine's live input on every monitoring audio track so you hear
 /// what it records.
@@ -155,7 +174,9 @@ pub fn render_blocks(session: &mut Session, blocks: usize) -> Result<PlanarBuffe
 /// Made of: `Mixer::new` → `Mixer::add_track` / `add_bus` per memory
 /// track, with `StripParams::set_volume_db` / `set_pan` / `set_mute` /
 /// `set_solo` from its state → `Mixer::set_track_output` / `set_bus_output`
-/// → `Mixer::add_send` per send in the memory → a [`BufferPlayerNode`] (audio
+/// → `Mixer::add_insert` with a `graph::dynamics` node per built-in insert
+/// that is not bypassed, carrying its stored parameters →
+/// `Mixer::add_send` per send in the memory → a [`BufferPlayerNode`] (audio
 /// held in memory) or [`ScheduledSynthNode`] (MIDI notes through the tempo
 /// map) per unmuted clip → a [`MonoSynthNode`] with a MIDI edge per
 /// monitoring MIDI track → a [`LiveInputNode`] on the channel(s) its input
@@ -177,9 +198,22 @@ pub(crate) fn build_mixer_with_strips(
     cache: &AudioCache,
     channels: usize,
 ) -> Result<(Mixer, MixerHandles, Strips)> {
+    build_mixer_placing(memory, cache, channels, &mut |_| None)
+}
+
+/// [`build_mixer_with_strips`], asking `place` for the node of every
+/// plugin insert. `None` leaves the insert out. The session's own rebuild
+/// places the running instances; a bounce places copies of them.
+pub(crate) fn build_mixer_placing(
+    memory: &Memory,
+    cache: &AudioCache,
+    channels: usize,
+    place: &mut dyn FnMut(&Insert) -> Option<PluginNode>,
+) -> Result<(Mixer, MixerHandles, Strips)> {
     let mut mixer = Mixer::new(channels);
     let strips = add_strips(memory, &mut mixer)?;
     route(memory, &mut mixer, &strips)?;
+    let (inserts, plugins) = add_inserts(memory, &mut mixer, &strips, channels, place)?;
     let sends = add_sends(memory, &mut mixer, &strips)?;
     add_clip_players(memory, &mut mixer, &strips, cache)?;
     add_monitors(memory, &mut mixer, &strips)?;
@@ -187,6 +221,8 @@ pub(crate) fn build_mixer_with_strips(
     let mut handles = MixerHandles {
         strips: Vec::with_capacity(strips.len()),
         sends,
+        inserts,
+        plugins,
         click,
     };
     for (track, strip) in &strips {
@@ -292,6 +328,59 @@ fn route(memory: &Memory, mixer: &mut Mixer, strips: &Strips) -> Result<()> {
     Ok(())
 }
 
+/// What [`add_inserts`] hands back: the live controls of the built-in
+/// effects and of the plugins.
+type InsertHandles = (Vec<(InsertId, InsertParams)>, Vec<(InsertId, PluginHandle)>);
+
+/// The insert chain of every strip, the master's included, in the memory's
+/// order. A built-in effect gets its node, with the parameter values the
+/// memory holds on top of the effect's defaults; bypassed, it is left out,
+/// so its input passes through. A plugin gets the node `place` gives for
+/// it, bypassed or not (its instance has to stay in the mixer to be kept),
+/// and is left out when `place` gives none.
+fn add_inserts(
+    memory: &Memory,
+    mixer: &mut Mixer,
+    strips: &Strips,
+    channels: usize,
+    place: &mut dyn FnMut(&Insert) -> Option<PluginNode>,
+) -> Result<InsertHandles> {
+    let mut inserts = Vec::new();
+    let mut plugins = Vec::new();
+    for track in core::iter::once(memory.master()).chain(memory.tracks()) {
+        let Some(strip) = strip_of(strips, track.id()) else {
+            continue;
+        };
+        for insert in track.inserts() {
+            if matches!(insert.effect, crate::primitives::session::Effect::Plugin(_)) {
+                let Some(mut node) = place(insert) else {
+                    continue;
+                };
+                let bypass = node.bypass_handle();
+                if let Some(params) = node.take_param_sender() {
+                    plugins.push((insert.id(), PluginHandle { params, bypass }));
+                }
+                mixer.add_insert(strip, Box::new(node))?;
+                continue;
+            }
+            if insert.state.bypass {
+                continue;
+            }
+            let Some((node, params)) = InsertParams::node(&insert.effect, channels) else {
+                continue;
+            };
+            for (id, value) in &insert.state.params {
+                if let Some(param) = crate::primitives::session::EffectParam::from_id(*id) {
+                    params.set(param, *value as f32)?;
+                }
+            }
+            mixer.add_insert(strip, node)?;
+            inserts.push((insert.id(), params));
+        }
+    }
+    Ok((inserts, plugins))
+}
+
 /// A mixer send per send in the memory, at its level, tap and on/off.
 fn add_sends(
     memory: &Memory,
@@ -307,12 +396,7 @@ fn add_sends(
             let Some(StripId::Bus(into)) = strip_of(strips, send.bus()) else {
                 continue;
             };
-            let tap = if send.pre_fader {
-                SendTap::PreFader
-            } else {
-                SendTap::PostFader
-            };
-            let id = mixer.add_send(from, into, db_to_linear(send.state.level_db), tap)?;
+            let id = mixer.add_send(from, into, db_to_linear(send.state.level_db), send.tap)?;
             let params = mixer.send_params(id)?;
             params.set_enabled(send.state.enabled);
             sends.push((send.id(), params));
@@ -562,13 +646,7 @@ mod tests {
         assert!(before.peak() > 0.3);
         // Mute the track in the memory directly: mirrored on rebuild.
         let vox = session.memory.tracks()[0].id();
-        session
-            .history
-            .push(
-                &mut session.memory,
-                crate::primitives::session::commands::set_track_mute(vox, true),
-            )
-            .unwrap();
+        session.memory.track_mut(vox).unwrap().state.mute = true;
         transport::rewind(&mut session).unwrap();
         rebuild(&mut session).unwrap();
         let after = render_blocks(&mut session, 3).unwrap();
@@ -760,7 +838,7 @@ mod tests {
         memory.track_mut(room).unwrap().state.volume_db = -6.0206;
         assert!((steady_level(&memory, &cache) - direct * 0.25).abs() < 1e-3);
         memory.track_mut(fx).unwrap().state.mute = false;
-        memory.send_mut(send).unwrap().pre_fader = true;
+        memory.send_mut(send).unwrap().tap = crate::primitives::mixer::SendTap::PreFader;
         memory.track_mut(vox).unwrap().state.volume_db = -100.0;
         // The pre-fader tap skips the track's fader and its constant-power
         // pan law; the bus's balance law is unity at centre, so the raw tone
@@ -824,7 +902,7 @@ mod tests {
         session.audio_thread = None;
         assert!(matches!(
             render_blocks(&mut session, 1),
-            Err(SuperbError::Message(_))
+            Err(SuperbError::InvalidState { .. })
         ));
     }
 

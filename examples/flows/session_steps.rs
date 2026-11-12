@@ -44,6 +44,7 @@ use superb::primitives::buffers::PlanarBuffer;
 use superb::primitives::io::cache::AudioCache;
 use superb::primitives::io::wav::{self, WavFormat};
 use superb::primitives::io::{offline, Engine};
+use superb::primitives::mixer::SendTap;
 use superb::primitives::session::{Clip, ClipSource, Memory, MidiNote, TrackKind, TrackSend};
 use superb::primitives::transport::Transport;
 use superb::primitives::{Result, SampleRate, TimeDuration, TimePosition};
@@ -98,7 +99,10 @@ fn main() -> Result<()> {
     let room = memory.add_track("room", TrackKind::Bus);
     memory.track_mut(room)?.state.volume_db = -6.0;
     memory.set_track_output(keys, Some(room))?;
-    let send = memory.add_send(vox, TrackSend::new(room).level_db(-12.0).pre_fader())?;
+    let send = memory.add_send(
+        vox,
+        TrackSend::new(room).level_db(-12.0).tap(SendTap::PreFader),
+    )?;
 
     let (mixer, handles) = session::steps::build_mixer(&memory, &cache, 2)?;
     println!(

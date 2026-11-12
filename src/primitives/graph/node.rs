@@ -170,4 +170,22 @@ pub trait Node: Send {
     fn latency_frames(&self) -> usize {
         0
     }
+
+    /// What this node keeps across a graph swap, if anything: a key and the
+    /// place it is held.
+    ///
+    /// A rebuild replaces the whole graph, and most nodes are simply built
+    /// again. A node that holds something which cannot be built again (a
+    /// loaded plugin, with its state and its tails) returns the key it
+    /// answers to and its holding place. When a new graph is swapped in,
+    /// every node of it whose place is empty takes what the node with the
+    /// same key in the outgoing graph holds
+    /// ([`AudioGraph::adopt_from`](crate::primitives::graph::AudioGraph::adopt_from)).
+    /// That happens on the audio thread, between two blocks, as a pointer
+    /// move: nothing is allocated, freed or locked.
+    ///
+    /// The default is `None`: nothing to keep.
+    fn carry(&mut self) -> Option<(u64, &mut Option<Box<dyn core::any::Any + Send>>)> {
+        None
+    }
 }

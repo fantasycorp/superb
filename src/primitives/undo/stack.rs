@@ -305,7 +305,7 @@ impl<T: 'static> UndoStack<T> {
     /// Reverts the most recent step. Returns `Ok(false)` if there is nothing
     /// to undo. Fails if a group is open.
     pub fn undo(&mut self, target: &mut T) -> Result<bool> {
-        self.ensure_no_group("undo")?;
+        self.ensure_no_group("cannot undo while an undo group is open")?;
         let Some(mut entry) = self.undo.pop() else {
             return Ok(false);
         };
@@ -321,7 +321,7 @@ impl<T: 'static> UndoStack<T> {
     /// Re-applies the most recently undone step. Returns `Ok(false)` if
     /// there is nothing to redo. Fails if a group is open.
     pub fn redo(&mut self, target: &mut T) -> Result<bool> {
-        self.ensure_no_group("redo")?;
+        self.ensure_no_group("cannot redo while an undo group is open")?;
         let Some(mut entry) = self.redo.pop() else {
             return Ok(false);
         };
@@ -411,11 +411,9 @@ impl<T: 'static> UndoStack<T> {
     // Internals
     // ------------------------------------------------------------------
 
-    fn ensure_no_group(&self, what: &'static str) -> Result<()> {
+    fn ensure_no_group(&self, why: &'static str) -> Result<()> {
         if self.depth > 0 {
-            return Err(SuperbError::Message(format!(
-                "cannot {what} while an undo group is open"
-            )));
+            return Err(SuperbError::InvalidState { why });
         }
         Ok(())
     }

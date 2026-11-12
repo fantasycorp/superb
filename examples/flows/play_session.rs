@@ -2,14 +2,14 @@
 //!
 //! ```text
 //! transport::start / stop / seek / rewind / looping / playhead / state
-//! session::set_loop
+//! session::loop_range
 //! ```
 //!
 //! ```text
 //! transport::start(&mut session)?;
 //! session::steps::render_blocks(&mut session, 47)?;
 //! transport::seek(&mut session, TimePosition::from_seconds(1.0, rate))?;
-//! session::set_loop(&mut session, Some(range))?;
+//! session::loop_range(&mut session, Some(range))?;
 //! transport::looping(&mut session, true)?;
 //! transport::stop(&mut session)?;
 //! transport::rewind(&mut session)?;
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
         TimePosition::from_seconds(0.5, rate),
         TimePosition::from_seconds(1.0, rate),
     )?;
-    session::set_loop(&mut session, Some(range))?;
+    session::loop_range(&mut session, Some(range))?;
     transport::looping(&mut session, true)?;
     transport::seek(&mut session, range.start())?;
     session::steps::render_blocks(&mut session, 141)?;

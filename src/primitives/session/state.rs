@@ -1,6 +1,6 @@
 //! The state file: the switches a session keeps without undo, in their
 //! file form. State (a track's mute, solo, arm, monitor and input, a clip's
-//! mute, a send's on/off, whether playback loops, the click and its
+//! mute, a send's on/off, an insert's bypass, whether playback loops, the click and its
 //! count-in, where the playhead is) is never written into `memory.json`.
 //! An application that wants it kept says where (`session::state_file`),
 //! and this is what lands there, as JSON.
@@ -10,7 +10,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::primitives::session::{Input, Memory};
-use crate::primitives::{ClipId, RawId, Result, SendId, SuperbError, TimePosition, TrackId};
+use crate::primitives::{
+    ClipId, InsertId, RawId, Result, SendId, SuperbError, TimePosition, TrackId,
+};
 
 /// Version written into every state file; loading refuses newer ones.
 pub const STATE_FORMAT_VERSION: u32 = 1;
@@ -62,6 +64,16 @@ pub struct SendStateSnapshot {
 
 fn on() -> bool {
     true
+}
+
+/// An insert's switches.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InsertStateSnapshot {
+    /// The insert's raw id.
+    pub id: RawId,
+    /// Bypassed.
+    #[serde(default)]
+    pub bypass: bool,
 }
 
 /// Everything a session keeps as state, in file form.
@@ -134,6 +146,9 @@ pub struct StateSnapshot {
     /// Every send's switches.
     #[serde(default)]
     pub sends: Vec<SendStateSnapshot>,
+    /// Every insert's switches.
+    #[serde(default)]
+    pub inserts: Vec<InsertStateSnapshot>,
 }
 
 impl Memory {
@@ -142,6 +157,7 @@ impl Memory {
         let mut tracks = Vec::with_capacity(self.track_count() + 1);
         let mut clips = Vec::new();
         let mut sends = Vec::new();
+        let mut inserts = Vec::new();
         for t in core::iter::once(self.master()).chain(self.tracks()) {
             tracks.push(TrackStateSnapshot {
                 id: t.id().raw(),
@@ -164,6 +180,12 @@ impl Memory {
                     enabled: s.state.enabled,
                 });
             }
+            for i in t.inserts() {
+                inserts.push(InsertStateSnapshot {
+                    id: i.id().raw(),
+                    bypass: i.state.bypass,
+                });
+            }
         }
         StateSnapshot {
             format_version: STATE_FORMAT_VERSION,
@@ -174,6 +196,7 @@ impl Memory {
             tracks,
             clips,
             sends,
+            inserts,
         }
     }
 
@@ -205,6 +228,11 @@ impl Memory {
                 send.state.enabled = s.enabled;
             }
         }
+        for i in &state.inserts {
+            if let Ok(insert) = self.insert_mut(InsertId::from_raw(i.id)) {
+                insert.state.bypass = i.bypass;
+            }
+        }
         self.set_looping(state.looping);
         {
             let metronome = self.metronome_mut();
@@ -222,19 +250,15 @@ impl Memory {
         let json = serde_json::to_string_pretty(&self.state_snapshot())
             .map_err(|e| SuperbError::Message(format!("serialise state: {e}")))?;
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, json)
-            .map_err(|e| SuperbError::Message(format!("write {}: {e}", tmp.display())))?;
-        std::fs::rename(&tmp, path)
-            .map_err(|e| SuperbError::Message(format!("write {}: {e}", path.display())))
+        std::fs::write(&tmp, json).map_err(|e| SuperbError::io("write", &tmp, &e))?;
+        std::fs::rename(&tmp, path).map_err(|e| SuperbError::io("write", path, &e))
     }
 
     /// Reads a state file.
     pub fn load_state(path: impl AsRef<Path>) -> Result<StateSnapshot> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| SuperbError::Message(format!("read {}: {e}", path.display())))?;
-        serde_json::from_str(&text)
-            .map_err(|e| SuperbError::Message(format!("parse {}: {e}", path.display())))
+        let text = std::fs::read_to_string(path).map_err(|e| SuperbError::io("read", path, &e))?;
+        serde_json::from_str(&text).map_err(|e| SuperbError::format(Some(path), e.to_string()))
     }
 }
 

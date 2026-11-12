@@ -1,11 +1,11 @@
 //! `metronome` is the click, and the bars it plays before a recording.
 //!
 //! ```text
-//! metronome::enable / level / count_in
+//! metronome::on / level / count_in
 //! ```
 //!
 //! ```text
-//! metronome::enable(&mut session, true)?;
+//! metronome::on(&mut session, true)?;
 //! metronome::level(&mut session, -6.0)?;
 //! metronome::count_in(&mut session, 1)?;
 //! record::start(&mut session, source)?;
@@ -28,12 +28,12 @@ fn main() -> Result<()> {
     let folder = std::env::temp_dir().join("metronome_count_in.superb");
     let mut session = session::create(&folder, rate, block)?;
     // 120 bpm (a beat is 0.5 s). vox armed.
-    session::set_tempo(&mut session, 120.0)?;
+    session::tempo(&mut session, 120.0)?;
     let vox = track::add(&mut session, "vox", TrackKind::Audio)?;
     track::arm(&mut session, vox, true)?;
 
     // Click at −6 dB. One render per beat, four beats.
-    metronome::enable(&mut session, true)?;
+    metronome::on(&mut session, true)?;
     metronome::level(&mut session, -6.0)?;
     transport::start(&mut session)?;
     let blocks_per_beat = rate.hz() as usize / 2 / block;
@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         println!("beat {beat}: click peak {:.3}", audio.peak());
     }
     transport::stop(&mut session)?;
-    metronome::enable(&mut session, false)?;
+    metronome::on(&mut session, false)?;
 
     // 1 bar count-in. Seek to 2.0 s. Recording rolls from 0, punches in at 2.0 s.
     metronome::count_in(&mut session, 1)?;

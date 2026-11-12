@@ -84,9 +84,10 @@ impl WavFormat {
             (1, 16) => Ok(WavFormat::Pcm16),
             (1, 24) => Ok(WavFormat::Pcm24),
             (3, 32) => Ok(WavFormat::Float32),
-            _ => Err(SuperbError::Message(format!(
-                "unsupported wav format tag {tag} / {bits} bits"
-            ))),
+            _ => Err(SuperbError::format(
+                None,
+                format!("unsupported wav format tag {tag} / {bits} bits"),
+            )),
         }
     }
 
@@ -119,7 +120,12 @@ impl WavFormat {
 }
 
 fn io_err(e: io::Error) -> SuperbError {
-    SuperbError::Message(format!("wav io error: {e}"))
+    SuperbError::Io {
+        action: "read or write",
+        path: None,
+        kind: e.kind(),
+        reason: e.to_string(),
+    }
 }
 
 /// The `fmt ` chunk's 16 bytes.
@@ -279,8 +285,7 @@ impl Writer {
         format: WavFormat,
     ) -> Result<Self> {
         let path = path.as_ref();
-        let file = File::create(path)
-            .map_err(|e| SuperbError::Message(format!("cannot create {}: {e}", path.display())))?;
+        let file = File::create(path).map_err(|e| SuperbError::io("create", path, &e))?;
         let mut writer = Self::new(file, channels, sample_rate, format)?;
         writer.path = Some(path.to_path_buf());
         Ok(writer)
@@ -485,12 +490,12 @@ struct Layout {
 /// header), taking `file_len` as the truth when the sizes are not.
 fn layout(bytes: &[u8], file_len: usize) -> Result<Layout> {
     if bytes.len() < 12 || &bytes[8..12] != b"WAVE" {
-        return Err(SuperbError::Message("not a RIFF/WAVE file".into()));
+        return Err(SuperbError::format(None, "not a RIFF/WAVE file"));
     }
     let rf64 = match &bytes[0..4] {
         b"RIFF" => false,
         b"RF64" => true,
-        _ => return Err(SuperbError::Message("not a RIFF/WAVE file".into())),
+        _ => return Err(SuperbError::format(None, "not a RIFF/WAVE file")),
     };
     let u32_at =
         |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
@@ -511,7 +516,7 @@ fn layout(bytes: &[u8], file_len: usize) -> Result<Layout> {
         match id {
             b"fmt " => {
                 if len < 16 || start + 16 > bytes.len() {
-                    return Err(SuperbError::Message("fmt chunk too short".into()));
+                    return Err(SuperbError::format(None, "fmt chunk too short"));
                 }
                 fmt = Some((
                     u16::from_le_bytes([bytes[start], bytes[start + 1]]),
@@ -552,9 +557,9 @@ fn layout(bytes: &[u8], file_len: usize) -> Result<Layout> {
         pos = start + len + (len & 1); // chunks are word aligned
     }
     let (tag, channels, rate, bits) =
-        fmt.ok_or_else(|| SuperbError::Message("missing fmt chunk".into()))?;
+        fmt.ok_or_else(|| SuperbError::format(None, "missing fmt chunk"))?;
     let (data_start, data_len, unfinished) =
-        data.ok_or_else(|| SuperbError::Message("missing data chunk".into()))?;
+        data.ok_or_else(|| SuperbError::format(None, "missing data chunk"))?;
     let format = WavFormat::from_tag(tag, bits)?;
     check_channels(channels as usize)?;
     let frame_bytes = channels as usize * format.bytes_per_sample() as usize;
@@ -617,7 +622,7 @@ pub fn repair(path: impl AsRef<Path>) -> Result<u64> {
         .read(true)
         .write(true)
         .open(path)
-        .map_err(|e| SuperbError::Message(format!("cannot open {}: {e}", path.display())))?;
+        .map_err(|e| SuperbError::io("open", path, &e))?;
     let file_len = file.metadata().map_err(io_err)?.len() as usize;
     let mut head = vec![0u8; file_len.min(4096)];
     file.read_exact(&mut head).map_err(io_err)?;
@@ -634,10 +639,10 @@ pub fn repair(path: impl AsRef<Path>) -> Result<u64> {
     let rf64 = riff_size > SIZE_LIMIT;
     if rf64 {
         let junk_at = layout.junk_at.ok_or_else(|| {
-            SuperbError::Message(format!(
-                "{}: too large for a RIFF header and no room for ds64",
-                path.display()
-            ))
+            SuperbError::format(
+                Some(path),
+                "too large for a RIFF header and no room for ds64",
+            )
         })?;
         let mut ds64 = Vec::with_capacity(8 + DS64_LEN as usize);
         ds64.extend_from_slice(b"ds64");

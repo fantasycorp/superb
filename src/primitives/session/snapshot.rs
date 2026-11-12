@@ -5,6 +5,7 @@
 //! [`FORMAT_VERSION`] is written into every file; loading refuses newer
 //! versions.
 
+use crate::primitives::mixer::SendTap;
 use std::path::Path;
 
 use crate::primitives::transport::{LoopRange, TempoMap};
@@ -16,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::primitives::plugins::PluginFormat;
 use crate::primitives::session::{
-    Clip, ClipSource, Input, Insert, Marker, Memory, MetronomeState, PluginRef, Track, TrackKind,
-    TrackSend,
+    Clip, ClipSource, Effect, Input, Insert, Marker, Memory, MetronomeState, PluginRef, Track,
+    TrackKind, TrackSend,
 };
 
 /// Version of the snapshot format written by this crate.
@@ -155,19 +156,31 @@ fn default_true() -> bool {
 pub struct InsertSnapshot {
     /// Raw insert ID.
     pub id: RawId,
-    /// Plugin API.
-    pub format: PluginFormat,
-    /// Bundle path.
-    pub path: std::path::PathBuf,
-    /// The plugin's ID inside the bundle.
-    pub plugin: String,
-    /// Bypassed (`bypassed` in files written before the state structs).
-    #[serde(alias = "bypassed")]
+    /// Which effect it is. Absent in files written before the built-in
+    /// effects: those name a plugin in `format`, `path` and `plugin`.
+    #[serde(default)]
+    pub effect: Option<Effect>,
+    /// Plugin API. Read from older files, never written.
+    #[serde(default, skip_serializing)]
+    pub format: Option<PluginFormat>,
+    /// Bundle path. Read from older files, never written.
+    #[serde(default, skip_serializing)]
+    pub path: Option<std::path::PathBuf>,
+    /// The plugin's ID inside the bundle. Read from older files, never
+    /// written.
+    #[serde(default, skip_serializing)]
+    pub plugin: Option<String>,
+    /// Bypassed. State: read from older files (`bypassed` in the oldest),
+    /// never written; an insert is in circuit unless the state file says
+    /// otherwise.
+    #[serde(default, alias = "bypassed", skip_serializing)]
     pub bypass: bool,
     /// `(parameter id, value)` pairs the user has set.
     pub params: Vec<(u32, f64)>,
-    /// Opaque bytes the plugin saved (`state` in older files), or empty.
-    #[serde(alias = "state")]
+    /// Opaque bytes the plugin saved (`state` in older files). Left out
+    /// when empty: a session folder keeps them in a file of their own
+    /// (`session::Layout::plugin_state`), not in the memory's file.
+    #[serde(default, alias = "state", skip_serializing_if = "Vec::is_empty")]
     pub preset: Vec<u8>,
 }
 
@@ -330,7 +343,7 @@ impl From<&TrackSend> for SendSnapshot {
             id: s.id.raw(),
             bus: s.bus.raw(),
             level_db: s.state.level_db,
-            pre_fader: s.pre_fader,
+            pre_fader: s.tap == SendTap::PreFader,
             enabled: s.state.enabled,
         }
     }
@@ -340,9 +353,10 @@ impl From<&Insert> for InsertSnapshot {
     fn from(i: &Insert) -> Self {
         Self {
             id: i.id.raw(),
-            format: i.plugin.format,
-            path: i.plugin.path.clone(),
-            plugin: i.plugin.id.clone(),
+            effect: Some(i.effect.clone()),
+            format: None,
+            path: None,
+            plugin: None,
             bypass: i.state.bypass,
             params: i.state.params.clone(),
             preset: i.preset.clone(),
@@ -415,8 +429,37 @@ impl From<&Memory> for MemorySnapshot {
     }
 }
 
-fn io_err(context: &str, e: impl core::fmt::Display) -> SuperbError {
-    SuperbError::Message(format!("{context}: {e}"))
+/// A chain of inserts as a file holds it, back as the memory holds it.
+fn inserts_from(snaps: &[InsertSnapshot]) -> Result<Vec<Insert>> {
+    let mut inserts = Vec::with_capacity(snaps.len());
+    for i in snaps {
+        let insert_id = InsertId::from_raw(i.id);
+        if !insert_id.is_valid() {
+            return Err(SuperbError::InvalidArgument {
+                what: "insert id 0",
+            });
+        }
+        let effect = match (&i.effect, i.format, &i.path, &i.plugin) {
+            (Some(effect), ..) => effect.clone(),
+            (None, Some(format), Some(path), Some(id)) => Effect::Plugin(PluginRef {
+                format,
+                path: path.clone(),
+                id: id.clone(),
+            }),
+            _ => {
+                return Err(SuperbError::format(
+                    None,
+                    "an insert names neither an effect nor a plugin",
+                ))
+            }
+        };
+        let mut insert = Insert::with_id(insert_id, effect);
+        insert.state.bypass = i.bypass;
+        insert.state.params = i.params.clone();
+        insert.preset = i.preset.clone();
+        inserts.push(insert);
+    }
+    Ok(inserts)
 }
 
 impl Memory {
@@ -450,10 +493,8 @@ impl Memory {
     /// and meter values. Newer format versions are refused.
     pub fn from_snapshot(snap: &MemorySnapshot) -> Result<Memory> {
         if snap.format_version > FORMAT_VERSION {
-            return Err(SuperbError::Message(format!(
-                "session file format version {} is newer than supported version {FORMAT_VERSION}",
-                snap.format_version
-            )));
+            return Err(SuperbError::format(None, format!("session file format version {} is newer than supported version {FORMAT_VERSION}",
+                snap.format_version)));
         }
         let rate = SampleRate::new(snap.sample_rate_hz)?;
         let mut memory = Memory::new(snap.name.clone(), rate);
@@ -546,26 +587,7 @@ impl Memory {
                 clip.state.archived = i.archived;
                 track.clips.push(clip);
             }
-            for i in &t.inserts {
-                let insert_id = InsertId::from_raw(i.id);
-                if !insert_id.is_valid() {
-                    return Err(SuperbError::InvalidArgument {
-                        what: "insert id 0",
-                    });
-                }
-                let mut insert = Insert::with_id(
-                    insert_id,
-                    PluginRef {
-                        format: i.format,
-                        path: i.path.clone(),
-                        id: i.plugin.clone(),
-                    },
-                );
-                insert.state.bypass = i.bypass;
-                insert.state.params = i.params.clone();
-                insert.preset = i.preset.clone();
-                track.inserts.push(insert);
-            }
+            track.inserts = inserts_from(&t.inserts)?;
             let index = memory.track_count();
             memory.insert_track(index, track)?;
         }
@@ -584,7 +606,9 @@ impl Memory {
                 }
                 let mut send = TrackSend::with_id(send_id, TrackId::from_raw(s.bus));
                 send.state.level_db = s.level_db;
-                send.pre_fader = s.pre_fader;
+                if s.pre_fader {
+                    send.tap = SendTap::PreFader;
+                }
                 send.state.enabled = s.enabled;
                 memory.add_send(id, send)?;
             }
@@ -617,6 +641,10 @@ impl Memory {
                 master.state.volume_db = m.volume_db;
                 master.state.pan = m.pan;
                 master.state.mute = m.mute;
+                master.inserts = inserts_from(&m.inserts)?;
+                for insert in &master.inserts {
+                    memory.reserve(insert.id.raw());
+                }
                 memory.reserve(m.id);
                 *memory.master_mut() = master;
             }
@@ -631,28 +659,27 @@ impl Memory {
 
     /// Serialises the memory as pretty-printed JSON.
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(&self.snapshot()).map_err(|e| io_err("serialise session", e))
+        serde_json::to_string_pretty(&self.snapshot())
+            .map_err(|e| SuperbError::Message(format!("serialise session: {e}")))
     }
 
     /// Parses a `Memory` from JSON produced by [`to_json`](Self::to_json).
     pub fn from_json(json: &str) -> Result<Memory> {
-        let snap: MemorySnapshot =
-            serde_json::from_str(json).map_err(|e| io_err("parse session file", e))?;
+        let snap: MemorySnapshot = serde_json::from_str(json)
+            .map_err(|e| SuperbError::format(None, format!("not a session file: {e}")))?;
         Memory::from_snapshot(&snap)
     }
 
     /// Writes the memory as JSON to `path`.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        std::fs::write(path, self.to_json()?)
-            .map_err(|e| io_err(&format!("write {}", path.display()), e))
+        std::fs::write(path, self.to_json()?).map_err(|e| SuperbError::io("write", path, &e))
     }
 
     /// Reads a `Memory` written by [`save`](Self::save).
     pub fn load(path: impl AsRef<Path>) -> Result<Memory> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| io_err(&format!("read {}", path.display()), e))?;
+        let text = std::fs::read_to_string(path).map_err(|e| SuperbError::io("read", path, &e))?;
         Memory::from_json(&text)
     }
 }
@@ -688,8 +715,11 @@ mod tests {
         let room = s.add_track("room", TrackKind::Bus);
         s.set_track_output(drums, Some(room)).unwrap();
         s.set_track_output(bus, Some(room)).unwrap();
-        s.add_send(keys, TrackSend::new(bus).level_db(-9.0).pre_fader())
-            .unwrap();
+        s.add_send(
+            keys,
+            TrackSend::new(bus).level_db(-9.0).tap(SendTap::PreFader),
+        )
+        .unwrap();
         let disabled = s.add_send(drums, TrackSend::new(room)).unwrap();
         s.send_mut(disabled).unwrap().state.enabled = false;
         let mut verb = Insert::new(PluginRef {
@@ -786,6 +816,9 @@ mod tests {
             for sd in &mut t.sends {
                 sd.enabled = true;
             }
+            for i in &mut t.inserts {
+                i.bypass = false;
+            }
         }
         s.looping = false;
         s.playhead = 0;
@@ -833,14 +866,14 @@ mod tests {
         let room = back.tracks()[3].id();
         assert_eq!(back.track(drums).unwrap().output(), Some(room));
         assert_eq!(back.send_count(), 2);
-        assert!(back.tracks()[1].sends()[0].pre_fader);
+        assert_eq!(back.tracks()[1].sends()[0].tap, SendTap::PreFader);
         assert!(
             back.track(drums).unwrap().sends()[0].state.enabled,
             "send on/off is state and not in memory.json"
         );
         let verb = &back.track(room).unwrap().inserts()[0];
-        assert_eq!(verb.plugin.id, "com.example.verb");
-        assert!(verb.state.bypass);
+        assert!(matches!(&verb.effect, Effect::Plugin(p) if p.id == "com.example.verb"));
+        assert!(!verb.state.bypass, "bypass is state and not in memory.json");
         assert_eq!(verb.param(3), Some(0.25));
         assert_eq!(verb.preset, [1, 2, 3]);
         assert_eq!(back.insert_count(), 2);
@@ -1042,7 +1075,19 @@ mod tests {
             o.remove("monitor");
             for i in o["inserts"].as_array_mut().unwrap() {
                 let io = i.as_object_mut().unwrap();
-                rename(io, "bypass", "bypassed");
+                let oi = ot
+                    .insert(InsertId::from_raw(io["id"].as_u64().unwrap()))
+                    .unwrap();
+                // Old files named the plugin in three fields and carried
+                // the bypass.
+                let Effect::Plugin(plugin) = &oi.effect else {
+                    panic!("the rich session holds plugins");
+                };
+                io.remove("effect");
+                io.insert("format".into(), serde_json::json!(plugin.format));
+                io.insert("path".into(), serde_json::json!(plugin.path));
+                io.insert("plugin".into(), serde_json::json!(plugin.id));
+                io.insert("bypassed".into(), serde_json::json!(oi.state.bypass));
                 rename(io, "preset", "state");
             }
         }
@@ -1069,6 +1114,7 @@ mod tests {
                 assert!(!t.state.monitor);
             }
             for (i, oi) in t.inserts().iter().zip(o.inserts()) {
+                assert_eq!(i.effect, oi.effect);
                 assert_eq!(i.state, oi.state);
                 assert_eq!(i.preset, oi.preset);
             }

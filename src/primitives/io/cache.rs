@@ -1,4 +1,4 @@
-//! Audio held in memory for the console to play.
+//! Audio held in memory for the mixer to play.
 //!
 //! ```
 //! use std::path::Path;
@@ -36,7 +36,7 @@ use crate::primitives::{Result, SampleRate};
 
 /// Audio held in memory, keyed by the path clips refer to.
 ///
-/// A clip's `ClipSource::Audio { path }` is looked up here when the console
+/// A clip's `ClipSource::Audio { path }` is looked up here when the mixer
 /// is built; a missing entry plays as silence. Fill it with decoded files
 /// (`load`, feature `files`) or with buffers you made.
 #[derive(Clone, Debug, Default)]

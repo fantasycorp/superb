@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! track::add / volume / pan / mute / solo / route / peak
-//! send::add / level / enable
+//! send::add / level / on
 //! ```
 //!
 //! ```text
@@ -89,7 +89,7 @@ fn main() -> Result<()> {
     println!("plus bus with two sends: {:.3}", level(&mut session)?);
     send::level(&mut session, vox_send, -12.0)?;
     println!("vox send at -12 dB:      {:.3}", level(&mut session)?);
-    send::enable(&mut session, vox_send, false)?;
+    send::on(&mut session, vox_send, false)?;
     println!("vox send off:            {:.3}", level(&mut session)?);
 
     // gtr through the bus; bus fader −6 dB.
