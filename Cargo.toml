@@ -1,14 +1,17 @@
 [package]
 name = "superb"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.86"
 description = "A toolkit for building a digital audio workstation: everyday flows on top of real-time-safe primitives"
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/superb-audio/superb-sdk"
+repository = "https://github.com/fantasycorp/superb"
+readme = "README.md"
 keywords = ["audio", "daw", "realtime", "midi"]
 categories = ["multimedia::audio"]
 autoexamples = false
+# The website, docs source and internal notes are not part of the crate.
+exclude = ["/.github", "/www", "/docs", "/scripts", "/CLAUDE.md", "/DESIGN.md", "/ARA2_DESIGN.md"]
 
 [features]
 default = ["clap"]

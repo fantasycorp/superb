@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { WaveLine } from "../app/wave-line";
 
-const GITHUB_URL = "https://github.com/superb-audio/superb-sdk";
-const INSTALL = "cargo add superb";
+const GITHUB_URL = "https://github.com/fantasycorp/superb";
+const INSTALL = "cargo add --git https://github.com/fantasycorp/superb superb";
 
 // The quick start: a session, a track, a buffer, then audio back with no
 // device. The assert is what gets copied; the page shows it as the result.
