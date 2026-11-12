@@ -10,7 +10,7 @@ for the engine, `docs/flows.md` for the flow tier, and
 ## Layout
 
 - `src/primitives/` is the engine; modules never import a flow or the `Session`.
-- Flows (`session`, `track`, `clip`, `marker`, `transport`, `send`, `midi`,
+- Flows (`session`, `track`, `clip`, `marker`, `transport`, `send`, `insert`, `plugin`, `midi`,
   `record`, `metronome`, `export`, `devices`) are free functions over the `Session`
   struct in `src/session/mod.rs`; `session::steps` is its engine side.
   Verbs take `&mut Session`; steps take primitives; every verb doc ends
@@ -43,7 +43,7 @@ cargo doc --no-deps
 - No unsafe outside `primitives::realtime::{alloc, spsc}` and
   `primitives::plugins::clap`.
 - Structural edits go through `session::structural` (rebuilds the mixer);
-  state (mute, solo, arm, monitor, input, send on/off, looping) goes through
+  state (mute, solo, arm, monitor, input, send on/off, insert bypass, looping) goes through
   `session::set_state`, never enters the undo history and is saved only
   where `session::state_file` says; level edits
   reach the memory and the live handle.
@@ -55,7 +55,7 @@ cargo doc --no-deps
   obligations, sugar only for controls a musician knows, plumbing
   `pub(crate)`.
 - Files go where `session::Layout` says (`memory.json`, `state.json`,
-  `audio/`, `bounces/`, `stems/<name>/`); sessions live under a
+  `audio/`, `plugins/<insert id>.state`, `bounces/`, `stems/<name>/`); sessions live under a
   `session::Root`, `~/superb` by default. No other code builds those paths.
 - Every public item is documented; update the doc note and the example
   when an API changes.

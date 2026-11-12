@@ -97,7 +97,7 @@ exists because its absence cost a rename.
   *advance* moves the playhead, *gain* is a multiplier, *bounce* renders
   to a file. Do not borrow one for something else; TERMINOLOGY lists them.
 * **A flow is named for the thing or the task.** `session`, `track`,
-  `clip`, `transport`, `send` and `midi` are things; `record`, `export`
+  `clip`, `transport`, `send`, `insert`, `plugin` and `midi` are things; `record`, `export`
   and `devices` are tasks. State
   lives with its thing: mute and arm are `track::mute` and `track::arm`,
   not `record::`. No invented areas.
@@ -222,8 +222,10 @@ staying true.
 * A file-level copyleft dependency (MPL-2.0) is acceptable only behind an
   opt-in feature, imported from exactly one source file, with a test that
   fails if it is mentioned anywhere else. The `files` feature is the model.
-* Plugin formats whose SDKs carry their own licence terms (VST3, for
-  example) are not hosted until those terms have been reviewed.
+* Plugin formats whose SDKs carry their own licence terms are not hosted
+  until those terms have been reviewed, and the review is recorded in
+  DESIGN.md. Reviewed so far: VST3 (MIT from SDK 3.8.0) and ARA
+  (Apache-2.0).
 
 ## Commits
 
