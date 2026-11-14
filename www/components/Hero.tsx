@@ -222,7 +222,7 @@ export function Hero() {
           </div>
 
           <div className="links">
-            <a className="docs" href={GITHUB_URL}>
+            <a className="docs" href="https://docs.superb.fyi/docs">
               <span className="docsLabel">
                 Documentation <span className="arrow">↗</span>
               </span>
