@@ -200,7 +200,7 @@ a {
 .links {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 18px;
 }
 
 .docs {
