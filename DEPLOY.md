@@ -18,7 +18,9 @@ cargo login
 
 ## Each release
 
-Work from a clean checkout of `main`.
+Work from a clean checkout of `main`. The repository is
+<https://github.com/fantasycorp/superb>; `git remote -v` should show it as
+`origin`.
 
 ### 1. Check the tree
 
@@ -41,17 +43,23 @@ cargo doc --no-deps
 
 ### 3. Set the version
 
-Pick the version by [SemVer](https://semver.org/). Then:
+Pick the version by [SemVer](https://semver.org/); `X.Y.Z` stands for it
+below. The last release is the newest `## [x.y.z]` heading in
+[CHANGELOG.md](CHANGELOG.md), and `git tag --list 'v*'` lists them all.
+Before 1.0, a change that breaks the API raises the middle number. Then:
 
-- Set `version` in [Cargo.toml](Cargo.toml), for example `version = "0.1.0"`.
+- Set `version` in [Cargo.toml](Cargo.toml): `version = "X.Y.Z"`.
+- Set `HOST_VERSION` in
+  [src/primitives/plugins/clap/mod.rs](src/primitives/plugins/clap/mod.rs)
+  to the same number. It is what a CLAP plugin is told the host's version is.
 - In [CHANGELOG.md](CHANGELOG.md), rename `## [Unreleased]` to
-  `## [0.1.0] - YYYY-MM-DD`, delete the "Nothing has been tagged yet" line,
-  and add a fresh empty `## [Unreleased]` above it.
+  `## [X.Y.Z] - YYYY-MM-DD` and add a fresh empty `## [Unreleased]` above it.
+- Run `cargo check` so `Cargo.lock` takes the new version.
 
 ### 4. Commit and push
 
 ```bash
-git commit -am "release: superb 0.1.0"
+git commit -am "release: superb X.Y.Z"
 git push origin main
 ```
 
@@ -79,10 +87,17 @@ The crate appears at <https://crates.io/crates/superb> within a minute or so.
 
 ### 7. Tag the release
 
+Tag the release commit of step 4, the one on `main` that was published.
+The tag is annotated, named `vX.Y.Z`, with the message `superb X.Y.Z`.
+
 ```bash
-git tag -a v0.1.0 -m "superb 0.1.0"
-git push origin v0.1.0
+git tag -a vX.Y.Z -m "superb X.Y.Z"
+git push origin vX.Y.Z
 ```
+
+A pushed tag is not moved afterwards: people and tools that fetched it
+keep the old one. If `main` is ever rewritten, the tag stays on the commit
+that was published.
 
 ### 8. Check that it installs
 
@@ -96,14 +111,15 @@ cargo check
 
 ### 9. Update the website
 
-In [www/components/Hero.tsx](www/components/Hero.tsx), change `INSTALL` to
-`cargo add superb`, then redeploy `www/`.
+The install line in [www/components/Hero.tsx](www/components/Hero.tsx) is
+`cargo add superb` and names no version, so it needs no change. Redeploy
+`www/` only if the page itself changed.
 
 ## Mistakes
 
-- **Broken release:** `cargo yank --version 0.1.0 superb` stops new projects
-  from picking it up. Existing lockfiles still build. Then publish `0.1.1`.
-  Undo a yank with `cargo yank --undo --version 0.1.0 superb`.
+- **Broken release:** `cargo yank --version X.Y.Z superb` stops new projects
+  from picking it up. Existing lockfiles still build. Then publish the next
+  patch version. Undo a yank with `cargo yank --undo --version X.Y.Z superb`.
 - **Wrong files in the tarball:** fix `exclude` in `Cargo.toml`, bump the
   version, and publish again. A published version cannot be replaced.
 - **Leaked token:** revoke it at <https://crates.io/me> and run `cargo login`
