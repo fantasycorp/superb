@@ -68,9 +68,10 @@ pub struct Session {
   in a fixed order; its rustdoc ends with **Made of:** naming them. When a
   verb is not what you want, call the primitives yourself.
 * **Edits undo, state does not.** Adding, moving, levels are edits on
-  `session.history`. Mute, solo, arm, monitor, input, looping, the click
-  and the playhead are state: heard at the next block, never an undo step,
-  saved only once `session::state_file` names a file.
+  `session.history`. Mute, solo, arm, monitor, input, clip mute, send
+  on/off, looping, the click and its count-in, and the playhead are state:
+  heard at the next block, never an undo step, saved only once
+  `session::state_file` names a file.
 * **Drags coalesce.** Moves of one control within half a second
   (`Session::COALESCE_WINDOW`) are one undo step. `session.history.seal()`
   ends the step now.
