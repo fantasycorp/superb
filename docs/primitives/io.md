@@ -134,11 +134,10 @@ is **MPL-2.0** — a file-level copyleft. Superb keeps it contained:
   scans every `.rs` file under `src/`, `tests/` and `examples/` and fails if
   any other file mentions the crate outside a comment. It runs on every
   `cargo test`.
-* symphonia is built with `default-features = false` and only `wav`,
-  `flac` and `pcm`, so no patent-encumbered or extra-licence codecs are
-  pulled in. Transitive crates (`symphonia-core`, `-format-riff`,
-  `-bundle-flac`, `-codec-pcm`, `-metadata`, `-common`) are MPL-2.0 too and
-  only reachable from `decode.rs`.
+* symphonia is built with `default-features = false` and
+  `all-codecs, all-formats`, so a wide range of containers and codecs is
+  available behind the same `files` feature. Transitive symphonia crates
+  are MPL-2.0 too and only reachable from `decode.rs`.
 
 Resampling uses [rubato](https://crates.io/crates/rubato) 4 (MIT OR
 Apache-2.0; 5.x needs rustc 1.87, above the crate's 1.86 floor) and
@@ -159,9 +158,9 @@ let in_memory = decode_bytes(std::fs::read("vox.wav")?, Some("wav"))?;
 * `decode(path)` opens the file (seekable, so trailing metadata is read),
   `decode_bytes(Vec<u8>, hint)` decodes from memory, `decode_from(reader)`
   consumes any `Read + Send + Rebuild` stream without seeking.
-* Formats with the default `files` build: WAV (PCM 8/16/24/32-bit, float)
-  and FLAC. More containers/codecs are a matter of adding symphonia
-  features in `Cargo.toml` — nothing else changes.
+* Formats supported by the `files` build include WAV, AIFF, FLAC, ALAC,
+  MP3, AAC (MP4/M4A), Ogg Vorbis, CAF and Matroska. Symphonia is built
+  with `all-codecs` and `all-formats`; no extra Cargo feature is needed.
 * The first audio track is decoded in full into a planar `f32` buffer in
   file channel order; samples are converted from the codec's native format
   by symphonia (`i16` → `f32` is `/32768`, matching `wav::read`).
