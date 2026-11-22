@@ -20,6 +20,10 @@ skipped. Turn a result into an insert with
 
 **Returns** `Vec<PluginDescriptor>` — a descriptor per plugin found: name, vendor, id, features and the bundle's path. Empty when none is installed
 
+**Errors** never; a bundle that does not load is skipped.
+
+**Undo** none.
+
 **Made of** `plugins::scan::scan_default(PluginFormat::Clap)`.
 
 **Example**
@@ -171,6 +175,12 @@ left out of the mixer.
 - `session: &Session` — the open session, borrowed
 
 **Returns** `Vec<(InsertId, SuperbError)>` — each plugin insert whose plugin is not loaded, with the error the loader gave
+
+**Errors** never; a query.
+
+**Undo** none.
+
+**Made of** the `PluginSlot::Missing` entries of `Session::plugins`.
 
 **Example**
 

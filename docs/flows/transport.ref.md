@@ -155,6 +155,8 @@ rendered, or where the last `seek` sent it if no block has run since.
 
 **Undo** none.
 
+**Made of** `EngineHandle::position`.
+
 **Example**
 
 ```rust
@@ -177,6 +179,8 @@ The transport state after the last block the engine rendered.
 **Errors** never; a query.
 
 **Undo** none.
+
+**Made of** `EngineHandle::state`.
 
 **Example**
 

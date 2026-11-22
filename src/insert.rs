@@ -152,8 +152,11 @@ pub fn bypass(session: &mut Session, insert: InsertId, on: bool) -> Result<()> {
 }
 
 /// How much an effect was turning the signal down at the end of the last
-/// block, in dB, for a gain-reduction meter. `None` for an insert that is
-/// not in the mixer: bypassed, a plugin, or added since the last rebuild.
+/// block, in dB, for a gain-reduction meter. `None` for a plugin insert,
+/// which reports no reduction, and for a built-in effect that is not in
+/// the mixer: bypassed, or added since the last rebuild.
+///
+/// Made of: `MixerHandles::insert` → `InsertParams::reduction_db`.
 pub fn reduction(session: &Session, insert: InsertId) -> Option<f32> {
     session.mixer.insert(insert).map(|p| p.reduction_db())
 }

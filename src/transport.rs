@@ -91,11 +91,15 @@ pub fn looping(session: &mut Session, on: bool) -> Result<()> {
 
 /// Where the playhead is: the position after the last block the engine
 /// rendered, or where the last [`seek`] sent it if no block has run since.
+///
+/// Made of: `EngineHandle::position`.
 pub fn playhead(session: &Session) -> TimePosition {
     session.engine.position()
 }
 
 /// The transport state after the last block the engine rendered.
+///
+/// Made of: `EngineHandle::state`.
 pub fn state(session: &Session) -> TransportState {
     session.engine.state()
 }

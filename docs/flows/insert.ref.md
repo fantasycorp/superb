@@ -160,14 +160,21 @@ pub fn reduction(session: &Session, insert: InsertId) -> Option<f32>
 ```
 
 How much an effect was turning the signal down at the end of the last block,
-in dB, for a gain-reduction meter. `None` for an insert that is not in the
-mixer: bypassed, a plugin, or added since the last rebuild.
+in dB, for a gain-reduction meter. `None` for a plugin insert, which reports
+no reduction, and for a built-in effect that is not in the mixer: bypassed,
+or added since the last rebuild.
 
 **Takes**
 - `session: &Session` — the open session, borrowed
 - `insert: InsertId` — the insert's id, from `insert::add` or `track.inserts()`
 
-**Returns** `Option<f32>` — dB taken off at the end of the last block (zero or more; a leveler that is turning the signal up reads below zero), or `None` when the insert is not in the mixer
+**Returns** `Option<f32>` — dB taken off at the end of the last block (zero or more; a leveler that is turning the signal up reads below zero), or `None` for a plugin insert and for a built-in effect not in the mixer (bypassed, or added since the last rebuild)
+
+**Errors** never; a query.
+
+**Undo** none.
+
+**Made of** `MixerHandles::insert` → `InsertParams::reduction_db`.
 
 **Example**
 

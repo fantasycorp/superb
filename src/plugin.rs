@@ -147,6 +147,8 @@ pub fn changes(session: &mut Session, insert: InsertId) -> Result<Vec<PluginChan
 /// The plugin inserts of the session whose plugin could not be loaded,
 /// each with the reason. They stay in the session, are saved as they
 /// were, and are left out of the mixer.
+///
+/// Made of: the `PluginSlot::Missing` entries of `Session::plugins`.
 pub fn missing(session: &Session) -> Vec<(InsertId, SuperbError)> {
     session
         .plugins

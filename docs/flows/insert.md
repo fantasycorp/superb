@@ -73,8 +73,9 @@ Every signature, argument, error and undo step: [insert reference](insert.ref.md
 * A parameter the effect does not have is refused. Values the effect
   cannot use are clamped by the effect.
 * The limiter looks ahead 5 ms; the mixer delays the other strips to match.
-* `reduction` is `None` for an insert that is not in the mixer: bypassed,
-  a plugin, or added since the last rebuild.
+* `reduction` is `None` for a plugin insert, which reports no reduction,
+  and for a built-in effect that is not in the mixer: bypassed, or added
+  since the last rebuild.
 * A plugin insert (`Effect::Plugin`) is added, moved, bypassed and removed
   here like the others; its parameters are in the [plugin](plugin.md)
   flow. Bypassing a plugin does not rebuild the mixer: it stays loaded.

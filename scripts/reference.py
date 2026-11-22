@@ -255,11 +255,11 @@ note("insert::param", returns="nothing", errors="an unknown insert; a parameter 
      value="in the parameter's unit: dB for levels, milliseconds for times, Hz for a frequency, `n` of `n:1` for a ratio")
 note("insert::bypass", returns="nothing", errors="an unknown insert", undo=STATE + REB, example="insert::bypass(&mut session, comp, true)?;",
      on="`true` to bypass, `false` to put it back in circuit")
-note("insert::reduction", returns="dB taken off at the end of the last block (zero or more; a leveler that is turning the signal up reads below zero), or `None` when the insert is not in the mixer", errors="", undo="",
+note("insert::reduction", returns="dB taken off at the end of the last block (zero or more; a leveler that is turning the signal up reads below zero), or `None` for a plugin insert and for a built-in effect not in the mixer (bypassed, or added since the last rebuild)", errors="never; a query", undo="none",
      example="if let Some(db) = insert::reduction(&session, comp) {\n    println!(\"-{db:.1} dB\");\n}")
 
 # ---- plugin ----
-note("plugin::scan", returns="a descriptor per plugin found: name, vendor, id, features and the bundle's path. Empty when none is installed", errors="", undo="",
+note("plugin::scan", returns="a descriptor per plugin found: name, vendor, id, features and the bundle's path. Empty when none is installed", errors="never; a bundle that does not load is skipped", undo="none",
      example="for p in plugin::scan() {\n    println!(\"{} ({})\", p.name, p.vendor);\n}")
 note("plugin::params", returns="one `ParamInfo` per parameter, in the plugin's order: `id`, `name`, `min`, `max`, `default`", errors="an unknown insert; an insert that is not a plugin; a plugin that could not be loaded (the error says why)", undo=NONE,
      example="for p in plugin::params(&mut session, verb)? {\n    println!(\"{} {}\", p.id, p.name);\n}")
@@ -270,7 +270,7 @@ note("plugin::value", returns="the parameter's value as the plugin reports it no
      example="let wet = plugin::value(&mut session, verb, mix.id)?;", param="the parameter's id, from `plugin::params`")
 note("plugin::changes", returns="each `PluginChange` the plugin reported since the last call, in order: `Touched { id }`, `Value { id, value }`, `Released { id }`. Empty when it changed nothing", errors="an unknown insert; an insert that is not a plugin; a plugin that could not be loaded", undo=DRAG + ", for each value the plugin reports; the value is not sent back to the plugin, and an undo sends the one before",
      example="for change in plugin::changes(&mut session, verb)? {\n    if let PluginChange::Value { id, value } = change {\n        println!(\"{id} is now {value}\");\n    }\n}")
-note("plugin::missing", returns="each plugin insert whose plugin is not loaded, with the error the loader gave", errors="", undo="",
+note("plugin::missing", returns="each plugin insert whose plugin is not loaded, with the error the loader gave", errors="never; a query", undo="none",
      example="for (insert, why) in plugin::missing(&session) {\n    println!(\"{insert:?}: {why}\");\n}")
 
 # ---- midi ----
